@@ -1,0 +1,247 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ------------------------------------
+// ENUMS
+// ------------------------------------
+enum AccountStatus {
+  active
+  inactive
+  suspended
+  pending_verification
+}
+
+enum PropertyStatus {
+  AVAILABLE
+  SOLD
+  UNDER_OFFER
+}
+
+enum OutdoorSpace {
+  NONE
+  BALCONY
+  GARDEN
+  TERRACE
+}
+
+enum EnergyLabel {
+  A
+  B
+  C
+  D
+  E
+  F
+  G
+}
+
+enum LocationType {
+  CENTRE
+  SEMI_CENTRE
+  OUTSIDE_CENTRE
+}
+
+enum SubscriptionPlan {
+  INVESTOR_FREE
+  INVESTOR_BASIC
+  INVESTOR_PRO
+  INVESTOR_PREMIUM
+  AGENT_LISTING
+  AGENT_UNLIMITED
+  AGENT_PRO
+  AGENT_PREMIUM
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  TRIALING
+}
+
+// ------------------------------------
+// MODELS
+// ------------------------------------
+
+model Role {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String   @unique // e.g., 'admin', 'agent', 'client', 'user'
+  description String?
+  users       User[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+}
+
+model User {
+  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email           String        @unique
+  username        String?       @unique
+  firstName       String
+  lastName        String
+  displayName     String?
+  status          AccountStatus @default(pending_verification)
+  password        String
+  emailVerifiedAt DateTime?
+  bio             String?
+  avatarUrl       String?
+
+  // Role Relation
+  roleId String @db.Uuid
+  role   Role   @relation(fields: [roleId], references: [id])
+
+  // Relations
+  subscriptions   Subscription[]
+  calculations    SavedCalculation[]
+  properties      Property[]         @relation("PropertyAgent")
+  savedProperties Property[]         @relation("SavedProperties")
+  matchAlerts     MatchAlert[]
+
+  isDeleted   Boolean   @default(false)
+  lastLoginAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @default(now()) @updatedAt
+  deletedAt   DateTime?
+}
+
+model Country {
+  id        String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String  @unique
+  slug      String  @unique
+  continent String?
+  isActive  Boolean @default(true)
+
+  properties Property[]
+  insights   MarketInsight[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+model MarketInsight {
+  id                  String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  countryId           String  @db.Uuid
+  country             Country @relation(fields: [countryId], references: [id], onDelete: Cascade)
+  regionName          String
+  description         String?
+  averageYield        Float
+  averageAppreciation Float
+  availableProperties Int     @default(0)
+  vacancyRate         Float?
+  indicators          Json    @default("[]") // For things like "High demand", etc.
+  image               String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+model Property {
+  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title       String
+  description String?
+  location    String
+  region      String?
+
+  countryId String?  @db.Uuid
+  country   Country? @relation(fields: [countryId], references: [id], onDelete: SetNull)
+
+  price        Float
+  yield        Float // Expected or actual yield percentage
+  appreciation Float // Expected appreciation percentage
+  type         String // e.g., Apartment, Studio, Villa, etc.
+  image        String?
+  sqm          Float
+  bedrooms     Int     @default(0)
+
+  status       PropertyStatus @default(AVAILABLE)
+  outdoorSpace OutdoorSpace   @default(NONE)
+  energyLabel  EnergyLabel    @default(C)
+  locationType LocationType   @default(CENTRE)
+  condition    String         @default("Standard") // e.g., Premium, High-End, Basic
+
+  agentId String? @db.Uuid
+  agent   User?   @relation(name: "PropertyAgent", fields: [agentId], references: [id], onDelete: SetNull)
+
+  calculations SavedCalculation[]
+  savedBy      User[]             @relation("SavedProperties")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+model MatchAlert {
+  id     String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name     String?
+  criteria Json
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+model NewsletterSubscriber {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email     String   @unique
+  markets   Json     @default("[]")
+  topics    Json     @default("[]")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+model Subscription {
+  id     String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  planType SubscriptionPlan   @default(INVESTOR_FREE)
+  status   SubscriptionStatus @default(TRIALING)
+
+  stripeCustomerId     String?   @unique
+  stripeSubscriptionId String?   @unique
+  currentPeriodEnd     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+model SavedCalculation {
+  id     String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  propertyId String?   @db.Uuid
+  property   Property? @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+
+  name        String // E.g., 'Lisbon Apartment Calc'
+  inputData   Json // The parameters inputted in the calculator
+  resultsData Json // The resulting calculations
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+model BlogPost {
+  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title       String
+  slug        String  @unique
+  excerpt     String?
+  content     String // markdown or HTML text
+  author      String // Can be a relation to User or just string
+  readTime    String? // E.g., '8 min read'
+  category    String // E.g., 'Market Trends'
+  country     String? // E.g., 'Portugal'
+  imageUrl    String?
+  isFeatured  Boolean @default(false)
+  isPublished Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
