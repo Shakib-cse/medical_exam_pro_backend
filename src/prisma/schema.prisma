@@ -88,6 +88,7 @@ model User {
   password        String
   emailVerifiedAt DateTime?
   bio             String?
+  targetExam      String?
   avatarUrl       String?
 
   // Role Relation
@@ -100,6 +101,8 @@ model User {
   properties      Property[]         @relation("PropertyAgent")
   savedProperties Property[]         @relation("SavedProperties")
   matchAlerts     MatchAlert[]
+  mockAttempts    MockExamAttempt[]
+  bankAttempts    BankAttempt[]
 
   isDeleted   Boolean   @default(false)
   lastLoginAt DateTime?
@@ -241,6 +244,119 @@ model BlogPost {
   imageUrl    String?
   isFeatured  Boolean @default(false)
   isPublished Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+model MockExam {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title           String
+  description     String?
+  difficultyBadge String   @default("MODERATE") // "MODERATE" | "ADVANCED" | "CLINICAL" | "STANDARD"
+  difficultyType  String   @default("moderate") // "moderate" | "advanced" | "clinical" | "standard"
+  durationMinutes Int      @default(45)
+  questionCount   Int      @default(50)
+  category        String   @default("General")
+  isActive        Boolean  @default(true)
+
+  questions MockQuestion[]
+  attempts  MockExamAttempt[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+model MockQuestion {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  mockExamId    String   @db.Uuid
+  mockExam      MockExam @relation(fields: [mockExamId], references: [id], onDelete: Cascade)
+  questionText  String
+  options       Json     // e.g. ["Option A", "Option B", "Option C", "Option D"]
+  correctAnswer Int      // 0-indexed
+  explanation   String?
+  order         Int      @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+model MockExamAttempt {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId            String    @db.Uuid
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mockExamId        String    @db.Uuid
+  mockExam          MockExam  @relation(fields: [mockExamId], references: [id], onDelete: Cascade)
+  status            String    @default("IN_PROGRESS") // "IN_PROGRESS" | "COMPLETED"
+  scorePercentage   Float?
+  totalQuestions    Int
+  correctAnswers    Int       @default(0)
+  timeTakenSeconds  Int       @default(0)
+  userAnswers       Json      @default("{}")
+  completedAt       DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+model QuestionBank {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title           String
+  description     String?
+  specialty       String   @default("General Medicine")
+  category        String   @default("Clinical Practice")
+  type            String   @default("Clinical") // "Clinical" | "SJT"
+  difficultyBadge String   @default("MODERATE") // "MODERATE" | "ADVANCED" | "CLINICAL" | "STANDARD"
+  difficultyType  String   @default("moderate") // "moderate" | "advanced" | "clinical" | "standard"
+  questionCount   Int      @default(0)
+  isActive        Boolean  @default(true)
+
+  questions BankQuestion[]
+  attempts  BankAttempt[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+model BankQuestion {
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  questionBankId String       @db.Uuid
+  questionBank   QuestionBank @relation(fields: [questionBankId], references: [id], onDelete: Cascade)
+  questionText   String
+  options        Json         // e.g. ["Option A", "Option B", "Option C", "Option D"]
+  correctAnswer  Int          // 0-indexed
+  explanation    String?
+  subTopic       String?
+  order          Int          @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+model BankAttempt {
+  id               String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId           String       @db.Uuid
+  user             User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  questionBankId   String       @db.Uuid
+  questionBank     QuestionBank @relation(fields: [questionBankId], references: [id], onDelete: Cascade)
+  status           String       @default("IN_PROGRESS") // "IN_PROGRESS" | "COMPLETED"
+  scorePercentage  Float?
+  totalQuestions   Int
+  correctAnswers   Int          @default(0)
+  timeTakenSeconds Int          @default(0)
+  userAnswers      Json         @default("{}")
+  completedAt      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+model DashboardContent {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  section   String   @unique // "clinical_topics" | "professional_dilemmas" | "daily_goal"
+  title     String?
+  content   Json     // Flexible JSON for each section's data structure
+  isActive  Boolean  @default(true)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt

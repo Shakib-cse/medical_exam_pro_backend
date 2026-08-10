@@ -1,22 +1,39 @@
-import "dotenv/config";
-import { PrismaPg } from "@prisma/adapter-pg";
-import { PrismaClient } from "@/generated/prisma/client";
+import dotenv from "dotenv";
+dotenv.config();
 
-const connectionString = process.env["DATABASE_URL"];
+import { neonConfig } from "@neondatabase/serverless";
+import { PrismaNeon } from "@prisma/adapter-neon";
+import { PrismaClient } from "@/generated/prisma";
+import ws from "ws";
+
+neonConfig.webSocketConstructor = ws;
+
+const connectionString = process.env.DATABASE_URL;
 
 if (!connectionString) {
-  throw new Error("DATABASE_URL is not configured. Please check your .env file.");
+  throw new Error("DATABASE_URL is not configured.");
 }
 
-const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
+const globalForPrisma = globalThis as unknown as {
+  prisma_v3?: PrismaClient;
+};
 
 export const prisma =
-  globalForPrisma.prisma ||
+  globalForPrisma.prisma_v3 ||
   (() => {
-    const adapter = new PrismaPg({ connectionString });
+    // Clear lingering env vars from old hot-reloaded state
+    delete process.env.PGHOST;
+    delete process.env.PGUSER;
+    delete process.env.PGPASSWORD;
+    delete process.env.PGDATABASE;
+    delete process.env.PGPORT;
+    delete process.env.PGSSLMODE;
+
+    const cleanUrl = connectionString.split("?")[0].replace("postgresql://", "postgres://");
+    const adapter = new PrismaNeon({ connectionString: cleanUrl });
     return new PrismaClient({ adapter });
   })();
 
 if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
+  globalForPrisma.prisma_v3 = prisma;
 }

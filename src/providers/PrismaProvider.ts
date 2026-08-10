@@ -1,8 +1,9 @@
 import { InfrastructureProvider } from "@/core/InfrastructureProvider";
-import { PrismaClient } from "@/generated/prisma/client";
+import { PrismaClient } from "@/generated/prisma";
 import { errorMapperRegistry } from "@/core/errors/ErrorMapperRegistry";
 import { AppError, ConflictError, NotFoundError } from "@/core/errors/AppError";
 import { HTTPStatusCode } from "@/types/HTTPStatusCode";
+import { AppLogger } from "@/core/logging/logger";
 
 export class PrismaProvider implements InfrastructureProvider<PrismaClient> {
   public name = "Prisma Database";
@@ -16,7 +17,11 @@ export class PrismaProvider implements InfrastructureProvider<PrismaClient> {
   }
 
   public async connect(): Promise<void> {
-    await this.prismaClient.$connect();
+    try {
+      await this.prismaClient.$connect();
+    } catch (err) {
+      AppLogger.warn("Prisma lazy connect warning (will reconnect on query):", err);
+    }
   }
 
   public async disconnect(): Promise<void> {
@@ -24,6 +29,12 @@ export class PrismaProvider implements InfrastructureProvider<PrismaClient> {
   }
 
   private mapPrismaError(err: any): AppError | null {
+    AppLogger.error("🔍 [PRISMA ERROR CAUGHT]", {
+      code: err?.code,
+      message: err?.message,
+      meta: err?.meta,
+    });
+
     if (err.code && typeof err.code === "string" && err.code.startsWith("P")) {
       switch (err.code) {
         case "P2002":
@@ -52,7 +63,7 @@ export class PrismaProvider implements InfrastructureProvider<PrismaClient> {
         default:
           return new AppError({
             statusCode: HTTPStatusCode.INTERNAL_SERVER_ERROR,
-            message: "Database operation failed",
+            message: err.message || "Database operation failed",
             code: "DATABASE_ERROR",
             details: { prismaCode: err.code, meta: err.meta },
           });

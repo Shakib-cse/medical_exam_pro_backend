@@ -9,6 +9,11 @@ declare global {
       validatedBody?: any;
       validatedQuery?: any;
       validatedParams?: any;
+      user?: {
+        userId: string;
+        email: string;
+        role: string;
+      };
     }
   }
 }

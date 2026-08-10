@@ -27,8 +27,11 @@
         "add:module": "bun scripts/generate-module.ts"
     },
     "dependencies": {
+        "@neondatabase/serverless": "^1.1.0",
+        "@prisma/adapter-neon": "^7.9.1",
         "@prisma/adapter-pg": "^7.8.0",
         "@prisma/client": "^7.8.0",
+        "@types/ws": "^8.18.1",
         "axios": "^1.12.2",
         "bcrypt": "^6.0.0",
         "chalk": "^5.6.0",
@@ -49,6 +52,7 @@
         "uuid": "^11.1.0",
         "winston": "^3.17.0",
         "winston-daily-rotate-file": "^5.0.0",
+        "ws": "^8.21.1",
         "zod": "^4.1.1"
     },
     "devDependencies": {

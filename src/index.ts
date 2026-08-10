@@ -8,6 +8,10 @@ import { PrismaProvider } from "./providers/PrismaProvider";
 import { prisma } from "./lib/prisma";
 
 // Modules (Business Logic)
+import { AuthModule } from "./Modules/Auth/AuthModule";
+import { MockExamModule } from "./Modules/MockExam/MockExamModule";
+import { QuestionBankModule } from "./Modules/QuestionBank/QuestionBankModule";
+import { OverviewModule } from "./Modules/Overview/OverviewModule";
 
 async function bootstrap() {
   try {
@@ -22,8 +26,10 @@ async function bootstrap() {
 
     // 3. Register Application Modules
     AppLogger.info("⚙ Registering modules...");
-    // app.registerModule(new AuthModule());
-    // app.registerModule(new ProductModule());
+    app.registerModule(new AuthModule());
+    app.registerModule(new MockExamModule());
+    app.registerModule(new QuestionBankModule());
+    app.registerModule(new OverviewModule());
     AppLogger.info("✔ All modules registered successfully");
 
     // 4. Spark the server!
