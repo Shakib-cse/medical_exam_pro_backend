@@ -4,7 +4,7 @@
     "type": "module",
     "scripts": {
         "dev": "NODE_ENV=development bun run --watch src/index.ts",
-        "build": "prisma generate",
+        "build": "prisma generate && esbuild api/index.ts --bundle --platform=node --target=node20 --format=esm --outfile=api/index.js --external:@prisma/client --external:@neondatabase/serverless --external:bcrypt --external:pg",
         "start": "NODE_ENV=production bun run dist/index.js",
         "test": "NODE_ENV=test bun test",
         "db:generate": "prisma generate",
@@ -71,7 +71,8 @@
         "@types/node": "^25.0.3",
         "@types/nodemailer": "^8.0.1",
         "@types/pg": "^8.16.0",
-        "@vercel/node": "^5.9.8"
+        "@vercel/node": "^5.9.8",
+        "esbuild": "^0.28.2"
     },
     "peerDependencies": {
         "typescript": "^5"
