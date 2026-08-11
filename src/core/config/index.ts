@@ -56,6 +56,14 @@ export const config = {
     level: process.env.LOG_LEVEL || "info",
     path: process.env.LOG_FILE_PATH || "logs/app.log",
   },
+  email: {
+    host: process.env.SMTP_HOST || "smtp.gmail.com",
+    port: parseInt(process.env.SMTP_PORT || "465"),
+    secure: process.env.SMTP_SECURE === "true" || process.env.SMTP_PORT === "465",
+    user: process.env.SMTP_USER || "",
+    pass: process.env.SMTP_PASS || "",
+    from: process.env.EMAIL_FROM || "Kawan App <no-reply@kawan.com>",
+  },
 };
 
 export default config;

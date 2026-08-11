@@ -9,6 +9,7 @@ import {
   NotFoundError,
 } from "@/core/errors/AppError";
 import { AppLogger } from "@/core/logging/logger";
+import { mailService } from "@/lib/email";
 import {
   RegisterDto,
   LoginDto,
@@ -148,7 +149,7 @@ export class AuthService {
   }
 
   /**
-   * Register a new user
+   * Register a new user (Requires email OTP verification)
    */
   public async register(dto: RegisterDto) {
     const email = dto.email.toLowerCase().trim();
@@ -159,39 +160,73 @@ export class AuthService {
       });
     });
 
-    if (existingUser) {
-      throw new ConflictError("An account with this email already exists");
-    }
-
     const defaultRoleId = await this.getOrCreateDefaultRole();
     const hashedPassword = await bcrypt.hash(dto.password, 10);
+    let user;
 
-    const user = await this.executeWithRetry(async () => {
-      return this.prisma.user.create({
-        data: {
-          email,
-          firstName: dto.firstName,
-          lastName: dto.lastName,
-          displayName: `${dto.firstName} ${dto.lastName}`,
-          password: hashedPassword,
-          status: AccountStatus.active,
-          emailVerifiedAt: new Date(),
-          roleId: defaultRoleId,
-        },
-        include: {
-          role: true,
-        },
+    if (existingUser) {
+      if (existingUser.status === AccountStatus.active && existingUser.emailVerifiedAt) {
+        throw new ConflictError("An account with this email already exists. Please log in.");
+      }
+      // Update unverified user with new credentials
+      user = await this.executeWithRetry(async () => {
+        return this.prisma.user.update({
+          where: { id: existingUser.id },
+          data: {
+            firstName: dto.firstName,
+            lastName: dto.lastName,
+            displayName: `${dto.firstName} ${dto.lastName}`,
+            password: hashedPassword,
+            status: AccountStatus.pending_verification,
+          },
+          include: {
+            role: true,
+          },
+        });
       });
+    } else {
+      user = await this.executeWithRetry(async () => {
+        return this.prisma.user.create({
+          data: {
+            email,
+            firstName: dto.firstName,
+            lastName: dto.lastName,
+            displayName: `${dto.firstName} ${dto.lastName}`,
+            password: hashedPassword,
+            status: AccountStatus.pending_verification,
+            emailVerifiedAt: null,
+            roleId: defaultRoleId,
+          },
+          include: {
+            role: true,
+          },
+        });
+      });
+    }
+
+    const otpCode = this.generateOtp();
+    const otpKey = this.getOtpKey(email, "verify_email");
+    this.otpStore.set(otpKey, {
+      code: otpCode,
+      type: "verify_email",
+      expiresAt: Date.now() + 10 * 60 * 1000,
     });
 
-    const token = this.generateToken(user);
+    AppLogger.info(`🔑 [OTP Verify Email Generated] Email: ${email} | Code: ${otpCode}`);
 
-    AppLogger.info(`🔑 [User Registered Without OTP] Email: ${user.email}`);
+    // Send real verification email via SMTP
+    await mailService.sendOtpEmail(
+      email,
+      otpCode,
+      "verify_email",
+      dto.firstName || undefined
+    );
 
     return {
-      message: "Registration successful.",
+      message: "Registration successful! A verification code has been sent to your email.",
+      requiresVerification: true,
+      email: user.email,
       user: this.sanitizeUser(user),
-      token,
     };
   }
 
@@ -241,12 +276,11 @@ export class AuthService {
       });
 
       this.otpStore.delete(otpKey);
-      const token = this.generateToken(updatedUser);
 
       return {
-        message: "Email verified successfully!",
+        message: "Email verified successfully! You can now log in.",
+        verified: true,
         user: this.sanitizeUser(updatedUser),
-        token,
       };
     } else {
       // Password reset OTP verification
@@ -282,8 +316,16 @@ export class AuthService {
 
     AppLogger.info(`🔑 [OTP Code Resent] Email: ${email} | Type: ${dto.type} | Code: ${otpCode}`);
 
+    // Send real email via SMTP
+    await mailService.sendOtpEmail(
+      email,
+      otpCode,
+      dto.type,
+      user.firstName || undefined
+    );
+
     return {
-      message: "A new verification code has been generated and sent.",
+      message: "A new verification code has been generated and sent to your email.",
       otpCode: config.server.env === "development" ? otpCode : undefined,
     };
   }
@@ -311,6 +353,10 @@ export class AuthService {
 
     if (user.status === AccountStatus.suspended) {
       throw new AuthenticationError("Your account has been suspended. Please contact support.");
+    }
+
+    if (user.status === AccountStatus.pending_verification || !user.emailVerifiedAt) {
+      throw new AuthenticationError("Your email has not been verified yet. Please verify your email before logging in.");
     }
 
     // Update last login timestamp
@@ -351,10 +397,18 @@ export class AuthService {
       });
 
       AppLogger.info(`🔑 [OTP Reset Password Generated] Email: ${email} | Code: ${otpCode}`);
+
+      // Send real email via SMTP
+      await mailService.sendOtpEmail(
+        email,
+        otpCode,
+        "reset_password",
+        user.firstName || undefined
+      );
     }
 
     return {
-      message: "If an account exists with this email, a 6-digit verification code has been sent.",
+      message: "If an account exists with this email, a 6-digit verification code has been sent to your inbox.",
     };
   }
 
