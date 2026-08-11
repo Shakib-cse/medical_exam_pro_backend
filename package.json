@@ -24,7 +24,8 @@
         "docker:up": "docker-compose up -d",
         "docker:down": "docker-compose down",
         "docker:logs": "docker-compose logs -f",
-        "add:module": "bun scripts/generate-module.ts"
+        "add:module": "bun scripts/generate-module.ts",
+        "postinstall": "prisma generate && prisma db push"
     },
     "dependencies": {
         "@neondatabase/serverless": "^1.1.0",
