@@ -1,4 +1,4 @@
-import { NotFoundError } from "@/core/errors/AppError";
+import { NotFoundError } from "../core/errors/AppError";
 import { Request, Response, NextFunction } from "express";
 
 export function notFoundHandler() {

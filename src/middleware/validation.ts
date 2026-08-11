@@ -1,5 +1,5 @@
 // src/middleware/validation.ts
-import { ValidationError } from "@/core/errors/AppError";
+import { ValidationError } from "../core/errors/AppError";
 import { Request, Response, NextFunction } from "express";
 import { z } from "zod";
 

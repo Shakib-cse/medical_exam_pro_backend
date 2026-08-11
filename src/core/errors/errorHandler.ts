@@ -6,7 +6,7 @@ import {
   ValidationError,
 } from "./AppError";
 import { AppLogger } from "../logging/logger";
-import { HTTPStatusCode } from "@/types/HTTPStatusCode";
+import { HTTPStatusCode } from "../../types/HTTPStatusCode";
 import { errorMapperRegistry } from "./ErrorMapperRegistry";
 import { MulterError } from "multer";
 

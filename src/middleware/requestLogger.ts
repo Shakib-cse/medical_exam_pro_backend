@@ -1,7 +1,7 @@
-import { AppLogger } from "@/core/logging/logger";
+import { AppLogger } from "../core/logging/logger";
 import { Request, Response, NextFunction } from "express";
 import crypto from "crypto";
-import config from "@/core/config";
+import config from "../core/config";
 
 export function requestLogger() {
   return (req: Request, res: Response, next: NextFunction) => {

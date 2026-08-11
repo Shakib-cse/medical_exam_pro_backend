@@ -1,15 +1,15 @@
 import bcrypt from "bcrypt";
 import jwt, { SignOptions } from "jsonwebtoken";
-import { PrismaClient, AccountStatus } from "@/generated/prisma";
-import { config } from "@/core/config";
+import { PrismaClient, AccountStatus } from "../../generated/prisma";
+import { config } from "../../core/config";
 import {
   AuthenticationError,
   BadRequestError,
   ConflictError,
   NotFoundError,
-} from "@/core/errors/AppError";
-import { AppLogger } from "@/core/logging/logger";
-import { mailService } from "@/lib/email";
+} from "../../core/errors/AppError";
+import { AppLogger } from "../../core/logging/logger";
+import { mailService } from "../../lib/email";
 import {
   RegisterDto,
   LoginDto,

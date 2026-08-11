@@ -1,6 +1,6 @@
-import { IgnitorModule } from "@/core/IgnitorModule";
-import { AppError } from "@/core/errors/AppError";
-import { HTTPStatusCode } from "@/types/HTTPStatusCode";
+import { IgnitorModule } from "../core/IgnitorModule";
+import { AppError } from "../core/errors/AppError";
+import { HTTPStatusCode } from "../types/HTTPStatusCode";
 
 export function sortModulesByDependencies(
   modules: IgnitorModule[],

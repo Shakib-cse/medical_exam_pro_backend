@@ -1,9 +1,9 @@
-import { InfrastructureProvider } from "@/core/InfrastructureProvider";
-import { PrismaClient } from "@/generated/prisma";
-import { errorMapperRegistry } from "@/core/errors/ErrorMapperRegistry";
-import { AppError, ConflictError, NotFoundError } from "@/core/errors/AppError";
-import { HTTPStatusCode } from "@/types/HTTPStatusCode";
-import { AppLogger } from "@/core/logging/logger";
+import { InfrastructureProvider } from "../core/InfrastructureProvider";
+import { PrismaClient } from "../generated/prisma";
+import { errorMapperRegistry } from "../core/errors/ErrorMapperRegistry";
+import { AppError, ConflictError, NotFoundError } from "../core/errors/AppError";
+import { HTTPStatusCode } from "../types/HTTPStatusCode";
+import { AppLogger } from "../core/logging/logger";
 
 export class PrismaProvider implements InfrastructureProvider<PrismaClient> {
   public name = "Prisma Database";

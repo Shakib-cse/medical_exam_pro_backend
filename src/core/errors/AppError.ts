@@ -1,5 +1,5 @@
 // src/core/errors/AppError.ts
-import { HTTPStatusCode } from "@/types/HTTPStatusCode";
+import { HTTPStatusCode } from "../../types/HTTPStatusCode";
 import { config } from "../config";
 
 // 1. Define the parameters object

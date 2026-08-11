@@ -1,4 +1,4 @@
-import { BaseModule } from "@/core/BaseModule";
+import { BaseModule } from "../../core/BaseModule";
 import { AuthService } from "./AuthService";
 import { AuthController } from "./AuthController";
 import { createAuthRoutes } from "./authRoutes";

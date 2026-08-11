@@ -1,4 +1,4 @@
-import { BaseModule } from "@/core/BaseModule";
+import { BaseModule } from "../../core/BaseModule";
 import { OverviewService } from "./OverviewService";
 import { OverviewController } from "./OverviewController";
 import { createOverviewRoutes } from "./overviewRoutes";

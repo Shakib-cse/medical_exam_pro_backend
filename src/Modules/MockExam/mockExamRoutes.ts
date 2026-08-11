@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { MockExamController } from "./MockExamController";
-import { authenticate } from "@/middleware/auth";
+import { authenticate } from "../../middleware/auth";
 import { Request, Response, NextFunction } from "express";
 
 function optionalAuth(req: Request, res: Response, next: NextFunction) {

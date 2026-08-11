@@ -1,4 +1,4 @@
-import { PrismaClient } from "@/generated/prisma";
+import { PrismaClient } from "../../generated/prisma";
 
 export class OverviewService {
   constructor(private prisma: PrismaClient) { }

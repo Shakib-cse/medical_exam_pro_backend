@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { OverviewService } from "./OverviewService";
-import { AppLogger } from "@/core/logging/logger";
+import { AppLogger } from "../../core/logging/logger";
 
 export class OverviewController {
   constructor(private readonly service: OverviewService) { }

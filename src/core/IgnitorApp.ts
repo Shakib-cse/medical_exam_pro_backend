@@ -5,12 +5,12 @@ import { IgnitorModule } from "./IgnitorModule";
 import { config } from "./config";
 import { BaseModule } from "./BaseModule";
 import { AppError } from "./errors/AppError";
-import { HTTPStatusCode } from "@/types/HTTPStatusCode";
+import { HTTPStatusCode } from "../types/HTTPStatusCode";
 import { AppLogger } from "./logging/logger";
 import { errorHandler } from "./errors/errorHandler";
-import { notFoundHandler } from "@/middleware/notFound";
-import { setupGlobalMiddlewares } from "@/middleware/globalMiddlewares";
-import { sortModulesByDependencies } from "@/utils/moduleSorter";
+import { notFoundHandler } from "../middleware/notFound";
+import { setupGlobalMiddlewares } from "../middleware/globalMiddlewares";
+import { sortModulesByDependencies } from "../utils/moduleSorter";
 import { Server } from "http";
 
 export class IgnitorApp {

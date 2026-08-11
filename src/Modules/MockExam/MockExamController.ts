@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { MockExamService } from "./MockExamService";
-import { AppLogger } from "@/core/logging/logger";
+import { AppLogger } from "../../core/logging/logger";
 
 export class MockExamController {
   constructor(private readonly mockExamService: MockExamService) { }

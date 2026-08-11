@@ -1,4 +1,4 @@
-import { BaseModule } from "@/core/BaseModule";
+import { BaseModule } from "../../core/BaseModule";
 import { MockExamService } from "./MockExamService";
 import { MockExamController } from "./MockExamController";
 import { createMockExamRoutes } from "./mockExamRoutes";

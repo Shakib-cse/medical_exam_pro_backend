@@ -1,7 +1,7 @@
 // src/core/BaseController.ts
 import { Request, Response } from "express";
-import { HTTPStatusCode } from "@/types/HTTPStatusCode";
-import { ApiResponse, PaginatedResponse } from "@/types/types";
+import { HTTPStatusCode } from "../types/HTTPStatusCode";
+import { ApiResponse, PaginatedResponse } from "../types/types";
 import { AppLogger } from "./logging/logger";
 
 export abstract class BaseController {

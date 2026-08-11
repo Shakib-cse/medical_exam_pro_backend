@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
 import { QuestionBankService } from "./QuestionBankService";
-import { AppLogger } from "@/core/logging/logger";
+import { AppLogger } from "../../core/logging/logger";
 
 export class QuestionBankController {
   constructor(private readonly service: QuestionBankService) { }

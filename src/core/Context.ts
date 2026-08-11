@@ -1,9 +1,9 @@
 import { AppLogger } from "./logging/logger";
 import { config as AppConfig } from "./config";
-import { ServiceMap } from "@/types/ServiceMap";
+import { ServiceMap } from "../types/ServiceMap";
 import { InfrastructureProvider } from "./InfrastructureProvider";
 import { AppError } from "./errors/AppError";
-import { HTTPStatusCode } from "@/types/HTTPStatusCode";
+import { HTTPStatusCode } from "../types/HTTPStatusCode";
 
 export class Context {
   public readonly config = AppConfig;

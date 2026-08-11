@@ -1,4 +1,4 @@
-import { BaseModule } from "@/core/BaseModule";
+import { BaseModule } from "../../core/BaseModule";
 import { QuestionBankService } from "./QuestionBankService";
 import { QuestionBankController } from "./QuestionBankController";
 import { createQuestionBankRoutes } from "./questionBankRoutes";

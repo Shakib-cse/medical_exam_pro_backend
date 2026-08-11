@@ -4,10 +4,10 @@ import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import cookieParser from "cookie-parser";
-import { config } from "@/core/config";
+import { config } from "../core/config";
 import { requestLogger } from "./requestLogger";
 import { requestId } from "./requestId";
-import { TimeoutError, RateLimitError } from "@/core/errors/AppError";
+import { TimeoutError, RateLimitError } from "../core/errors/AppError";
 import timeout from "connect-timeout";
 
 export function setupGlobalMiddlewares(app: Express) {

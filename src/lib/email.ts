@@ -1,6 +1,6 @@
 import nodemailer from "nodemailer";
-import { config } from "@/core/config";
-import { AppLogger } from "@/core/logging/logger";
+import { config } from "../core/config";
+import { AppLogger } from "../core/logging/logger";
 
 class MailService {
   private transporter: nodemailer.Transporter | null = null;
