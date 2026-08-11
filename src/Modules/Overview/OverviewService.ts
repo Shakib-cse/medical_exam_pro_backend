@@ -1,7 +1,7 @@
 import { PrismaClient } from "@/generated/prisma";
 
 export class OverviewService {
-  constructor(private prisma: PrismaClient) {}
+  constructor(private prisma: PrismaClient) { }
 
   /**
    * Get all dashboard content sections (clinical_topics, professional_dilemmas, daily_goal)

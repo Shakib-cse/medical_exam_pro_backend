@@ -59,6 +59,30 @@ export class IgnitorApp {
         }
       }
 
+      this.app.get("/", (req, res) => {
+        res.status(200).json({
+          name: "Medical Exam Pro API",
+          status: "online",
+          version: "1.0.0",
+          timestamp: new Date().toISOString(),
+          uptime: process.uptime(),
+        });
+      });
+
+      this.app.get(["/api", "/api/v1"], (req, res) => {
+        res.status(200).json({
+          name: "Medical Exam Pro API v1",
+          status: "online",
+          endpoints: [
+            "/api/v1/auth",
+            "/api/v1/overview",
+            "/api/v1/mock-exams",
+            "/api/v1/question-bank",
+            "/health",
+          ],
+        });
+      });
+
       this.app.get("/health", (req, res) => {
         res.status(200).json({
           status: "healthy",
