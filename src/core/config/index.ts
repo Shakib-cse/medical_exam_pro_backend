@@ -1,24 +1,7 @@
 import dotenv from "dotenv";
 
-// Load environment variables
-const result = dotenv.config();
-
-// Handle .env loading errors
-if (result.error) {
-  if (result.error.message.includes("ENOENT")) {
-    if (process.env.NODE_ENV !== "production") {
-      throw new Error(
-        "⚠️  .env file not found. Please create one based on .env.example",
-      );
-    } else {
-      console.warn(
-        "⚠️  .env file not found. Using provided environment variables.",
-      );
-    }
-  } else {
-    throw new Error(`Failed to load .env file: ${result.error.message}`);
-  }
-}
+// Load environment variables if .env file exists locally
+dotenv.config();
 
 // Validate and parse configuration
 export const config = {

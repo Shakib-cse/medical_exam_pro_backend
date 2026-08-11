@@ -2,23 +2,33 @@
 import { createExpressApp } from "../src/createApp";
 import type { Request, Response } from "express";
 
-let appPromise: Promise<any> | null = null;
+let app: any = null;
 
 export default async function handler(req: Request, res: Response) {
   try {
-    if (!appPromise) {
-      appPromise = createExpressApp();
+    if (!app) {
+      app = await createExpressApp();
     }
-    const app = await appPromise;
-    return app(req, res);
+    return new Promise<void>((resolve, reject) => {
+      res.on("finish", () => resolve());
+      res.on("close", () => resolve());
+      res.on("error", (err) => reject(err));
+
+      app(req, res, (err: any) => {
+        if (err) return reject(err);
+        resolve();
+      });
+    });
   } catch (err: any) {
     console.error("❌ Vercel Serverless Function Error:", err);
-    res.status(500).json({
-      success: false,
-      error: "Server Initialization Failed",
-      details: err?.message || String(err),
-      hint: "Check that environment variables (DATABASE_URL, JWT_SECRET, etc.) are properly configured in your Vercel Project Settings.",
-    });
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        error: "Server Initialization Failed",
+        details: err?.message || String(err),
+      });
+    }
   }
 }
+
 
