@@ -41,8 +41,8 @@ export class IgnitorApp {
     AppLogger.info(`⚙ Registered module: ${module.name}`);
   }
 
-  // The main boot sequence
-  public async spark(port: number): Promise<void> {
+  // Initialize modules and middlewares without binding to a port (for Serverless/Vercel)
+  public async initialize(): Promise<Express> {
     try {
       // 1. Initialize Infrastructure (Connects Prisma, Redis, etc.)
       await this.context.initialize();
@@ -70,6 +70,18 @@ export class IgnitorApp {
       // 4. Global 404 and Error Handlers (MUST be last)
       this.app.use(notFoundHandler());
       this.app.use(errorHandler());
+
+      return this.app;
+    } catch (error) {
+      AppLogger.error(" Failed to initialize server:", { error });
+      throw error;
+    }
+  }
+
+  // The main boot sequence for standalone server (Local/Docker)
+  public async spark(port: number): Promise<void> {
+    try {
+      await this.initialize();
 
       // 5. Start the server
       AppLogger.info("🙭 Starting server...");
