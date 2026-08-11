@@ -3,16 +3,10 @@ dotenv.config();
 
 import { neonConfig } from "@neondatabase/serverless";
 import { PrismaNeon } from "@prisma/adapter-neon";
-import { PrismaClient } from "@/generated/prisma";
+import { PrismaClient } from "../generated/prisma";
 import ws from "ws";
 
 neonConfig.webSocketConstructor = ws;
-
-const connectionString = process.env.DATABASE_URL;
-
-if (!connectionString) {
-  throw new Error("DATABASE_URL is not configured.");
-}
 
 const globalForPrisma = globalThis as unknown as {
   prisma_v3?: PrismaClient;
@@ -21,6 +15,13 @@ const globalForPrisma = globalThis as unknown as {
 export const prisma =
   globalForPrisma.prisma_v3 ||
   (() => {
+    const connectionString = process.env.DATABASE_URL;
+
+    if (!connectionString) {
+      console.warn("⚠️ [DATABASE_URL] Missing in environment variables.");
+      return new PrismaClient();
+    }
+
     // Clear lingering env vars from old hot-reloaded state
     delete process.env.PGHOST;
     delete process.env.PGUSER;

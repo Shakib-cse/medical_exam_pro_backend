@@ -3,7 +3,7 @@ import { OverviewService } from "./OverviewService";
 import { AppLogger } from "@/core/logging/logger";
 
 export class OverviewController {
-  constructor(private readonly service: OverviewService) {}
+  constructor(private readonly service: OverviewService) { }
 
   private getUserId(req: Request): string | undefined {
     return req.user?.userId || (req.user as any)?.id;

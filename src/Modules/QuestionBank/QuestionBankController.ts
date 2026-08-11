@@ -3,7 +3,7 @@ import { QuestionBankService } from "./QuestionBankService";
 import { AppLogger } from "@/core/logging/logger";
 
 export class QuestionBankController {
-  constructor(private readonly service: QuestionBankService) {}
+  constructor(private readonly service: QuestionBankService) { }
 
   private getUserId(req: Request): string | undefined {
     return req.user?.userId || (req.user as any)?.id;
