@@ -3,7 +3,7 @@ import { MockExamService } from "./MockExamService";
 import { AppLogger } from "@/core/logging/logger";
 
 export class MockExamController {
-  constructor(private readonly mockExamService: MockExamService) {}
+  constructor(private readonly mockExamService: MockExamService) { }
 
   private getUserId(req: Request): string | undefined {
     return req.user?.userId || (req.user as any)?.id;

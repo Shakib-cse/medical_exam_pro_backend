@@ -1,7 +1,7 @@
 import { PrismaClient } from "@/generated/prisma";
 
 export class QuestionBankService {
-  constructor(private prisma: PrismaClient) {}
+  constructor(private prisma: PrismaClient) { }
 
   /**
    * Get all question bank modules
@@ -15,10 +15,10 @@ export class QuestionBankService {
         },
         attempts: userId
           ? {
-              where: { userId },
-              orderBy: { createdAt: "desc" },
-              take: 1,
-            }
+            where: { userId },
+            orderBy: { createdAt: "desc" },
+            take: 1,
+          }
           : false,
       },
       orderBy: { createdAt: "desc" },
@@ -37,9 +37,9 @@ export class QuestionBankService {
         isUnattempted = false;
         lastAttemptedStr = latestAttempt.completedAt
           ? new Date(latestAttempt.completedAt).toLocaleDateString("en-US", {
-              month: "short",
-              day: "numeric",
-            })
+            month: "short",
+            day: "numeric",
+          })
           : "Recently";
       }
 
@@ -113,15 +113,15 @@ export class QuestionBankService {
         questionCount: payload.questions ? payload.questions.length : 0,
         questions: payload.questions
           ? {
-              create: payload.questions.map((q, index) => ({
-                questionText: q.questionText,
-                options: q.options,
-                correctAnswer: q.correctAnswer,
-                explanation: q.explanation,
-                subTopic: q.subTopic,
-                order: index,
-              })),
-            }
+            create: payload.questions.map((q, index) => ({
+              questionText: q.questionText,
+              options: q.options,
+              correctAnswer: q.correctAnswer,
+              explanation: q.explanation,
+              subTopic: q.subTopic,
+              order: index,
+            })),
+          }
           : undefined,
       },
       include: {

@@ -23,7 +23,7 @@ export function validateRequest(schema: {
         try {
           // Create a new object with parsed values
           req.query = parsedQuery as any;
-        } catch (error) {}
+        } catch (error) { }
       }
 
       // Validate params without modifying req.params

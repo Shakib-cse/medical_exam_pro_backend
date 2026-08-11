@@ -8,6 +8,10 @@ import config from "../config";
 const { combine, timestamp, printf, errors, json } = format;
 
 const LOG_DIR = config.logging.path;
+const isServerless =
+  process.env.VERCEL === "1" ||
+  !!process.env.VERCEL ||
+  process.env.AWS_LAMBDA_FUNCTION_NAME !== undefined;
 
 // Console format with colors/emojis
 const consoleFormat = printf(
@@ -44,6 +48,30 @@ export class AppLogger {
 
   private static init(): Logger {
     if (!this.instance) {
+      const activeTransports: any[] = [
+        new transports.Console({
+          format: combine(consoleFormat),
+        }),
+      ];
+
+      // Only attach file rotate handlers in non-serverless environments with writable disk
+      if (!isServerless) {
+        try {
+          activeTransports.push(
+            new DailyRotateFile({
+              dirname: LOG_DIR,
+              filename: "app-%DATE%.log",
+              datePattern: "YYYY-MM-DD",
+              maxFiles: "14d",
+              maxSize: "5m",
+              format: combine(json({ space: 2 })),
+            }),
+          );
+        } catch {
+          // Safely fallback to console
+        }
+      }
+
       this.instance = createLogger({
         exitOnError: false,
         format: combine(
@@ -52,35 +80,7 @@ export class AppLogger {
             format: () => dateFnsFormat(new Date(), "yyyy-MM-dd HH:mm:ss.SSS"),
           }),
         ),
-        transports: [
-          new transports.Console({
-            format: combine(consoleFormat),
-          }),
-          new DailyRotateFile({
-            dirname: LOG_DIR,
-            filename: "app-%DATE%.log",
-            datePattern: "YYYY-MM-DD",
-            maxFiles: "14d",
-            maxSize: "5m",
-            format: combine(json({ space: 2 })),
-          }),
-        ],
-        exceptionHandlers: [
-          new DailyRotateFile({
-            dirname: LOG_DIR,
-            filename: "exceptions-%DATE%.log",
-            datePattern: "YYYY-MM-DD",
-            format: combine(json({ space: 2 })),
-          }),
-        ],
-        rejectionHandlers: [
-          new DailyRotateFile({
-            dirname: LOG_DIR,
-            filename: "rejections-%DATE%.log",
-            datePattern: "YYYY-MM-DD",
-            format: combine(json({ space: 2 })),
-          }),
-        ],
+        transports: activeTransports,
       });
     }
     return this.instance;
