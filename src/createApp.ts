@@ -7,6 +7,7 @@ import { AuthModule } from "./Modules/Auth/AuthModule";
 import { MockExamModule } from "./Modules/MockExam/MockExamModule";
 import { QuestionBankModule } from "./Modules/QuestionBank/QuestionBankModule";
 import { OverviewModule } from "./Modules/Overview/OverviewModule";
+import { UploadModule } from "./Modules/Upload/UploadModule";
 import { Express } from "express";
 
 let appInstance: Express | null = null;
@@ -30,6 +31,7 @@ export async function createExpressApp(): Promise<Express> {
       app.registerModule(new MockExamModule());
       app.registerModule(new QuestionBankModule());
       app.registerModule(new OverviewModule());
+      app.registerModule(new UploadModule());
 
       const expressApp = await app.initialize();
       appInstance = expressApp;

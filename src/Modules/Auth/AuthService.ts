@@ -65,6 +65,7 @@ export class AuthService {
             lastName: "Administrator",
             password: hashedPassword,
             status: AccountStatus.active,
+            emailVerifiedAt: new Date(),
             roleId: adminRole.id,
           },
         });

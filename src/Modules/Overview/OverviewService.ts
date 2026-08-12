@@ -27,17 +27,19 @@ export class OverviewService {
   /**
    * Get user-specific dashboard stats computed from real attempt data
    */
-  async getUserStats(userId: string) {
-    // Get all completed mock exam attempts for this user
+  async getUserStats(userId?: string) {
+    const filter = userId ? { userId } : {};
+
+    // Get mock exam attempts
     const mockAttempts = await this.prisma.mockExamAttempt.findMany({
-      where: { userId, status: "COMPLETED" },
+      where: filter,
       orderBy: { createdAt: "desc" },
       include: { mockExam: true },
     });
 
-    // Get all completed bank attempts for this user
+    // Get bank attempts
     const bankAttempts = await this.prisma.bankAttempt.findMany({
-      where: { userId, status: "COMPLETED" },
+      where: filter,
       orderBy: { createdAt: "desc" },
     });
 
@@ -47,23 +49,21 @@ export class OverviewService {
     let totalTimeTakenSeconds = 0;
 
     for (const attempt of mockAttempts) {
-      totalQuestionsAttempted += attempt.totalQuestions;
-      totalCorrectAnswers += attempt.correctAnswers;
-      totalTimeTakenSeconds += attempt.timeTakenSeconds;
+      totalQuestionsAttempted += attempt.totalQuestions || 0;
+      totalCorrectAnswers += attempt.correctAnswers || 0;
+      totalTimeTakenSeconds += attempt.timeTakenSeconds || 0;
     }
 
     for (const attempt of bankAttempts) {
-      totalQuestionsAttempted += attempt.totalQuestions;
-      totalCorrectAnswers += attempt.correctAnswers;
-      totalTimeTakenSeconds += attempt.timeTakenSeconds;
+      totalQuestionsAttempted += attempt.totalQuestions || 0;
+      totalCorrectAnswers += attempt.correctAnswers || 0;
+      totalTimeTakenSeconds += attempt.timeTakenSeconds || 0;
     }
 
-    const totalWrong = totalQuestionsAttempted - totalCorrectAnswers;
     const accuracyPct = totalQuestionsAttempted > 0
       ? Math.round((totalCorrectAnswers / totalQuestionsAttempted) * 100)
       : 0;
 
-    const totalAttempts = mockAttempts.length + bankAttempts.length;
     const avgTimePerQuestion = totalQuestionsAttempted > 0
       ? Math.round(totalTimeTakenSeconds / totalQuestionsAttempted)
       : 0;
@@ -75,8 +75,8 @@ export class OverviewService {
       if (!categoryScores[cat]) {
         categoryScores[cat] = { total: 0, correct: 0 };
       }
-      categoryScores[cat].total += attempt.totalQuestions;
-      categoryScores[cat].correct += attempt.correctAnswers;
+      categoryScores[cat].total += attempt.totalQuestions || 0;
+      categoryScores[cat].correct += attempt.correctAnswers || 0;
     }
 
     const weakestAreas = Object.entries(categoryScores)
@@ -88,32 +88,33 @@ export class OverviewService {
       .sort((a, b) => a.accuracyPct - b.accuracyPct)
       .slice(0, 4);
 
-    const weakestAreaNames = weakestAreas.map((a) => a.category).join(", ") || "Renal, Ethics";
-    const totalToRevisit = weakestAreas.reduce((acc, a) => acc + a.questionsToRevisit, 0) || 42;
-    const completedPct = totalQuestionsAttempted > 0 ? Math.min(100, Math.round((totalQuestionsAttempted / 1200) * 100)) : 36;
-    const displayAttempted = totalQuestionsAttempted > 0 ? totalQuestionsAttempted : 428;
-    const displayCorrect = totalQuestionsAttempted > 0 ? totalCorrectAnswers : 318;
-    const displayAccuracyPct = totalQuestionsAttempted > 0 ? accuracyPct : 74;
-    const displayAvgTime = totalQuestionsAttempted > 0 ? avgTimePerQuestion : 82;
+    const weakestAreaNames = weakestAreas.length > 0
+      ? weakestAreas.map((a) => a.category).join(", ")
+      : "None yet";
+      
+    const totalToRevisit = weakestAreas.reduce((acc, a) => acc + a.questionsToRevisit, 0);
+    const completedPct = totalQuestionsAttempted > 0 
+      ? Math.min(100, Math.round((totalQuestionsAttempted / 1200) * 100)) 
+      : 0;
 
     return {
       questionsAttempted: {
         title: "QUESTIONS ATTEMPTED",
-        value: `${displayAttempted.toLocaleString()} / 1,200`,
-        subtext: `${completedPct}% completed`,
+        value: `${totalQuestionsAttempted.toLocaleString()} / 1,200`,
+        subtext: totalQuestionsAttempted > 0 ? `${completedPct}% completed` : "No attempts yet",
         percentage: completedPct,
         type: "radial" as const,
       },
       accuracy: {
         title: "ACCURACY",
-        value: `${displayCorrect.toLocaleString()} / ${displayAttempted.toLocaleString()}`,
-        subtext: `${displayAccuracyPct}% correct`,
-        percentage: displayAccuracyPct,
+        value: `${totalCorrectAnswers.toLocaleString()} / ${totalQuestionsAttempted.toLocaleString()}`,
+        subtext: `${accuracyPct}% correct`,
+        percentage: accuracyPct,
         type: "radial" as const,
       },
       avgTime: {
         title: "AVERAGE ANSWERING TIME",
-        value: `${displayAvgTime} sec`,
+        value: `${avgTimePerQuestion} sec`,
         subtext: "Per attempted question",
         type: "text" as const,
       },

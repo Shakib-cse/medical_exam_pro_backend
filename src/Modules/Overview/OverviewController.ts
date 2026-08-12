@@ -36,21 +36,6 @@ export class OverviewController {
   public getUserStats = async (req: Request, res: Response): Promise<void> => {
     try {
       const userId = this.getUserId(req);
-      if (!userId) {
-        // Return default stats for unauthenticated users
-        res.status(200).json({
-          success: true,
-          data: {
-            questionsAttempted: { title: "QUESTIONS ATTEMPTED", value: "0", subtext: "No attempts yet", percentage: 0, type: "radial" },
-            accuracy: { title: "ACCURACY", value: "0 / 0", subtext: "0% correct", percentage: 0, type: "radial" },
-            avgTime: { title: "AVERAGE ANSWERING TIME", value: "0 sec", subtext: "Per attempted question", type: "text" },
-            weakestAreas: { title: "WEAKEST AREAS", value: "None yet", subtext: "0 questions to revisit", type: "text" },
-            weakestTopicsList: [],
-          },
-        });
-        return;
-      }
-
       const data = await this.service.getUserStats(userId);
       res.status(200).json({
         success: true,

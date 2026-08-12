@@ -41,3 +41,24 @@ export function authenticate(req: Request, _res: Response, next: NextFunction) {
     }
   }
 }
+
+export function optionalAuthenticate(req: Request, _res: Response, next: NextFunction) {
+  try {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith("Bearer ")) {
+      const token = authHeader.split(" ")[1];
+      if (token) {
+        const secret = config.security.jwt.secret || "default-secret";
+        const decoded = jwt.verify(token, secret) as JwtPayload;
+        req.user = {
+          userId: decoded.userId,
+          email: decoded.email,
+          role: decoded.role,
+        };
+      }
+    }
+  } catch (_) {
+    // Ignore invalid token in optional auth middleware
+  }
+  next();
+}
