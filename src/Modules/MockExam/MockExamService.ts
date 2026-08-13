@@ -38,10 +38,12 @@ export class MockExamService {
     }
 
     // Fetch user attempts
-    const attempts = await this.prisma.mockExamAttempt.findMany({
-      where: { userId },
-      orderBy: { createdAt: "desc" },
-    });
+    const attempts = userId
+      ? await this.prisma.mockExamAttempt.findMany({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+      })
+      : [];
 
     return mockExams.map((exam) => {
       const examAttempts = attempts.filter((a) => a.mockExamId === exam.id);

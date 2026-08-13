@@ -1,11 +1,16 @@
 import { Router } from "express";
 import { QuestionBankController } from "./QuestionBankController";
+import { authenticate, optionalAuthenticate } from "../../middleware/auth";
 
 export function createQuestionBankRoutes(controller: QuestionBankController): Router {
   const router = Router();
 
-  router.get("/", controller.getAllQuestionBanks);
-  router.get("/:id", controller.getQuestionBankById);
+  router.get("/", optionalAuthenticate, controller.getAllQuestionBanks);
+  router.get("/:id", optionalAuthenticate, controller.getQuestionBankById);
+
+  // Attempt routes
+  router.post("/:id/start", authenticate, controller.startBankAttempt);
+  router.post("/attempt/:attemptId/submit", authenticate, controller.submitBankAttempt);
 
   // Admin routes
   router.post("/", controller.createQuestionBank);
@@ -18,3 +23,4 @@ export function createQuestionBankRoutes(controller: QuestionBankController): Ro
 
   return router;
 }
+

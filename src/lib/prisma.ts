@@ -30,9 +30,14 @@ export const prisma =
     delete process.env.PGPORT;
     delete process.env.PGSSLMODE;
 
-    const cleanUrl = connectionString.split("?")[0].replace("postgresql://", "postgres://");
-    const adapter = new PrismaNeon({ connectionString: cleanUrl });
-    return new PrismaClient({ adapter });
+    try {
+      // Use standard Prisma Client for reliable Node/Bun database queries
+      return new PrismaClient();
+    } catch (_) {
+      const cleanUrl = connectionString.split("?")[0].replace("postgresql://", "postgres://");
+      const adapter = new PrismaNeon({ connectionString: cleanUrl });
+      return new PrismaClient({ adapter });
+    }
   })();
 
 if (process.env.NODE_ENV !== "production") {

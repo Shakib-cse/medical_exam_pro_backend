@@ -129,4 +129,49 @@ export class QuestionBankController {
       });
     }
   };
+
+  public startBankAttempt = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = this.getUserId(req);
+      if (!userId) {
+        res.status(401).json({ success: false, message: "Unauthorized" });
+        return;
+      }
+      const { id } = req.params;
+      const data = await this.service.startBankAttempt(userId, id as string);
+      res.status(200).json({
+        success: true,
+        data,
+      });
+    } catch (error: any) {
+      AppLogger.error("Failed to start bank attempt:", { error });
+      res.status(400).json({
+        success: false,
+        message: error.message || "Failed to start bank attempt",
+      });
+    }
+  };
+
+  public submitBankAttempt = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const userId = this.getUserId(req);
+      if (!userId) {
+        res.status(401).json({ success: false, message: "Unauthorized" });
+        return;
+      }
+      const { attemptId } = req.params;
+      const data = await this.service.submitBankAttempt(userId, attemptId as string, req.body);
+      res.status(200).json({
+        success: true,
+        data,
+      });
+    } catch (error: any) {
+      AppLogger.error("Failed to submit bank attempt:", { error });
+      res.status(400).json({
+        success: false,
+        message: error.message || "Failed to submit bank attempt",
+      });
+    }
+  };
 }
+

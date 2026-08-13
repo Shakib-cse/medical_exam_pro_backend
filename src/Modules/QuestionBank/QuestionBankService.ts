@@ -4,6 +4,29 @@ export class QuestionBankService {
   constructor(private prisma: PrismaClient) { }
 
   /**
+   * Helper to format attempt date into relative string ("Today", "1 day ago", "X days ago")
+   */
+  private formatDaysAgo(dateInput: Date | string): string {
+    const date = new Date(dateInput);
+    if (isNaN(date.getTime())) return "Recently";
+
+    const now = new Date();
+    const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const attemptMidnight = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+
+    const diffMs = todayMidnight - attemptMidnight;
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffDays <= 0) {
+      return "Today";
+    } else if (diffDays === 1) {
+      return "1 day ago";
+    } else {
+      return `${diffDays} days ago`;
+    }
+  }
+
+  /**
    * Get all question bank modules
    */
   async getAllQuestionBanks(userId?: string) {
@@ -32,15 +55,15 @@ export class QuestionBankService {
       let isUnattempted = true;
       let lastAttemptedStr = undefined;
 
-      if (latestAttempt && latestAttempt.scorePercentage !== null) {
-        avgAcc = `${Math.round(latestAttempt.scorePercentage)}%`;
+      if (latestAttempt) {
+        if (latestAttempt.scorePercentage !== null && latestAttempt.scorePercentage !== undefined) {
+          avgAcc = `${Math.round(latestAttempt.scorePercentage)}%`;
+        }
         isUnattempted = false;
-        lastAttemptedStr = latestAttempt.completedAt
-          ? new Date(latestAttempt.completedAt).toLocaleDateString("en-US", {
-            month: "short",
-            day: "numeric",
-          })
-          : "Recently";
+        const attemptDate = latestAttempt.completedAt || latestAttempt.createdAt;
+        if (attemptDate) {
+          lastAttemptedStr = this.formatDaysAgo(attemptDate);
+        }
       }
 
       return {
@@ -233,4 +256,90 @@ export class QuestionBankService {
 
     return { message: "Question deleted successfully" };
   }
+
+  /**
+   * Start a new bank attempt or resume in-progress attempt
+   */
+  async startBankAttempt(userId: string, bankId: string) {
+    const bank = await this.prisma.questionBank.findUnique({
+      where: { id: bankId },
+      include: { questions: true },
+    });
+
+    if (!bank) {
+      throw new Error("Question Bank module not found");
+    }
+
+    const existing = await this.prisma.bankAttempt.findFirst({
+      where: {
+        userId,
+        questionBankId: bankId,
+        status: "IN_PROGRESS",
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    if (existing) {
+      return existing;
+    }
+
+    return await this.prisma.bankAttempt.create({
+      data: {
+        userId,
+        questionBankId: bankId,
+        totalQuestions: bank.questions.length || bank.questionCount,
+        status: "IN_PROGRESS",
+      },
+    });
+  }
+
+  /**
+   * Submit a bank attempt and calculate score
+   */
+  async submitBankAttempt(
+    userId: string,
+    attemptId: string,
+    payload: { userAnswers: Record<string, number>; timeTakenSeconds: number }
+  ) {
+    const attempt = await this.prisma.bankAttempt.findFirst({
+      where: { id: attemptId, userId },
+      include: {
+        questionBank: {
+          include: { questions: true },
+        },
+      },
+    });
+
+    if (!attempt) {
+      throw new Error("Bank attempt not found");
+    }
+
+    const questions = attempt.questionBank.questions;
+    let correctCount = 0;
+
+    questions.forEach((q) => {
+      const userChoice = payload.userAnswers[q.id];
+      if (userChoice !== undefined && userChoice === q.correctAnswer) {
+        correctCount += 1;
+      }
+    });
+
+    const total = questions.length || 1;
+    const scorePercentage = (correctCount / total) * 100;
+
+    const updated = await this.prisma.bankAttempt.update({
+      where: { id: attemptId },
+      data: {
+        status: "COMPLETED",
+        scorePercentage,
+        correctAnswers: correctCount,
+        userAnswers: payload.userAnswers,
+        timeTakenSeconds: payload.timeTakenSeconds,
+        completedAt: new Date(),
+      },
+    });
+
+    return updated;
+  }
 }
+

@@ -28,7 +28,39 @@ export class OverviewService {
    * Get user-specific dashboard stats computed from real attempt data
    */
   async getUserStats(userId?: string) {
-    const filter = userId ? { userId } : {};
+    if (!userId) {
+      return {
+        questionsAttempted: {
+          title: "QUESTIONS ATTEMPTED",
+          value: "0 / 1,200",
+          subtext: "No attempts yet",
+          percentage: 0,
+          type: "radial" as const,
+        },
+        accuracy: {
+          title: "ACCURACY",
+          value: "0 / 0",
+          subtext: "0% correct",
+          percentage: 0,
+          type: "radial" as const,
+        },
+        avgTime: {
+          title: "AVERAGE ANSWERING TIME",
+          value: "0 sec",
+          subtext: "Per attempted question",
+          type: "text" as const,
+        },
+        weakestAreas: {
+          title: "WEAKEST AREAS",
+          value: "None yet",
+          subtext: "0 questions to revisit",
+          type: "text" as const,
+        },
+        weakestTopicsList: [],
+      };
+    }
+
+    const filter = { userId };
 
     // Get mock exam attempts
     const mockAttempts = await this.prisma.mockExamAttempt.findMany({
@@ -85,6 +117,7 @@ export class OverviewService {
         accuracyPct: scores.total > 0 ? Math.round((scores.correct / scores.total) * 100) : 0,
         questionsToRevisit: scores.total - scores.correct,
       }))
+      .filter((a) => a.accuracyPct < 60 && a.questionsToRevisit > 0)
       .sort((a, b) => a.accuracyPct - b.accuracyPct)
       .slice(0, 4);
 
