@@ -308,6 +308,7 @@ model QuestionBank {
   type            String   @default("Clinical") // "Clinical" | "SJT"
   difficultyBadge String   @default("MODERATE") // "MODERATE" | "ADVANCED" | "CLINICAL" | "STANDARD"
   difficultyType  String   @default("moderate") // "moderate" | "advanced" | "clinical" | "standard"
+  durationMinutes Int      @default(15)
   questionCount   Int      @default(0)
   isActive        Boolean  @default(true)
 

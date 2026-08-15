@@ -1,26 +1,13 @@
 import { Router } from "express";
 import { MockExamController } from "./MockExamController";
-import { authenticate } from "../../middleware/auth";
-import { Request, Response, NextFunction } from "express";
-
-function optionalAuth(req: Request, res: Response, next: NextFunction) {
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    try {
-      return authenticate(req, res, next);
-    } catch {
-      // Ignore token errors for optional auth
-    }
-  }
-  next();
-}
+import { authenticate, optionalAuthenticate } from "../../middleware/auth";
 
 export function createMockExamRoutes(controller: MockExamController): Router {
   const router = Router();
 
-  router.get("/", optionalAuth, controller.getMockExams);
+  router.get("/", optionalAuthenticate, controller.getMockExams);
   router.get("/history", authenticate, controller.getExamHistory);
-  router.get("/:id", optionalAuth, controller.getMockExamById);
+  router.get("/:id", optionalAuthenticate, controller.getMockExamById);
   router.post("/:id/start", authenticate, controller.startExam);
   router.post("/attempt/:attemptId/submit", authenticate, controller.submitExam);
 

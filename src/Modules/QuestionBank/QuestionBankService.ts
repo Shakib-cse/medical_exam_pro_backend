@@ -40,7 +40,6 @@ export class QuestionBankService {
           ? {
             where: { userId },
             orderBy: { createdAt: "desc" },
-            take: 1,
           }
           : false,
       },
@@ -48,19 +47,21 @@ export class QuestionBankService {
     });
 
     return banks.map((bank) => {
-      const qCount = bank.questions.length;
-      const latestAttempt = bank.attempts && bank.attempts.length > 0 ? bank.attempts[0] : null;
+      const qCount = bank.questions && bank.questions.length > 0 ? bank.questions.length : (bank.questionCount || 0);
+      const bankAttempts = bank.attempts || [];
+      const completedAttempts = bankAttempts.filter((a) => a.status === "COMPLETED");
+      const latestCompleted = completedAttempts.length > 0 ? completedAttempts[0] : null;
 
       let avgAcc = "N/A";
       let isUnattempted = true;
       let lastAttemptedStr = undefined;
 
-      if (latestAttempt) {
-        if (latestAttempt.scorePercentage !== null && latestAttempt.scorePercentage !== undefined) {
-          avgAcc = `${Math.round(latestAttempt.scorePercentage)}%`;
+      if (latestCompleted) {
+        if (latestCompleted.scorePercentage !== null && latestCompleted.scorePercentage !== undefined) {
+          avgAcc = `${Math.round(latestCompleted.scorePercentage)}%`;
         }
         isUnattempted = false;
-        const attemptDate = latestAttempt.completedAt || latestAttempt.createdAt;
+        const attemptDate = latestCompleted.completedAt || latestCompleted.createdAt;
         if (attemptDate) {
           lastAttemptedStr = this.formatDaysAgo(attemptDate);
         }
@@ -75,6 +76,7 @@ export class QuestionBankService {
         type: bank.type,
         difficultyBadge: bank.difficultyBadge,
         difficultyType: bank.difficultyType,
+        durationMinutes: bank.durationMinutes,
         questionCount: qCount,
         questions: bank.questions,
         avgAcc,
@@ -116,6 +118,7 @@ export class QuestionBankService {
     type?: string;
     difficultyBadge?: string;
     difficultyType?: string;
+    durationMinutes?: number;
     questions?: Array<{
       questionText: string;
       options: string[];
@@ -133,6 +136,7 @@ export class QuestionBankService {
         type: payload.type || "Clinical",
         difficultyBadge: payload.difficultyBadge || "MODERATE",
         difficultyType: payload.difficultyType || "moderate",
+        durationMinutes: payload.durationMinutes || 0,
         questionCount: payload.questions ? payload.questions.length : 0,
         questions: payload.questions
           ? {
@@ -168,6 +172,7 @@ export class QuestionBankService {
       type?: string;
       difficultyBadge?: string;
       difficultyType?: string;
+      durationMinutes?: number;
     }
   ) {
     const updated = await this.prisma.questionBank.update({
