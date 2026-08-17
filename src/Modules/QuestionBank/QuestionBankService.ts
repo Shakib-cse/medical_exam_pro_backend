@@ -173,13 +173,60 @@ export class QuestionBankService {
       difficultyBadge?: string;
       difficultyType?: string;
       durationMinutes?: number;
+      questions?: Array<{
+        id?: string;
+        questionText: string;
+        options: string[];
+        correctAnswer: number;
+        explanation?: string;
+        subTopic?: string;
+      }>;
     }
   ) {
-    const updated = await this.prisma.questionBank.update({
+    const existing = await this.prisma.questionBank.findUnique({ where: { id } });
+    if (!existing) {
+      throw new Error("Question Bank module not found");
+    }
+
+    const { questions, ...bankData } = payload;
+
+    await this.prisma.questionBank.update({
       where: { id },
-      data: payload,
+      data: {
+        ...(bankData.title !== undefined && { title: bankData.title }),
+        ...(bankData.description !== undefined && { description: bankData.description }),
+        ...(bankData.specialty !== undefined && { specialty: bankData.specialty }),
+        ...(bankData.category !== undefined && { category: bankData.category }),
+        ...(bankData.type !== undefined && { type: bankData.type }),
+        ...(bankData.difficultyBadge !== undefined && { difficultyBadge: bankData.difficultyBadge }),
+        ...(bankData.difficultyType !== undefined && { difficultyType: bankData.difficultyType }),
+        ...(bankData.durationMinutes !== undefined && { durationMinutes: bankData.durationMinutes }),
+      },
     });
-    return updated;
+
+    if (questions) {
+      await this.prisma.bankQuestion.deleteMany({ where: { questionBankId: id } });
+      if (questions.length > 0) {
+        await this.prisma.bankQuestion.createMany({
+          data: questions.map((q, idx) => ({
+            questionBankId: id,
+            questionText: q.questionText,
+            options: q.options,
+            correctAnswer: q.correctAnswer,
+            explanation: q.explanation || null,
+            subTopic: q.subTopic || null,
+            order: idx,
+          })),
+        });
+      }
+
+      await this.prisma.questionBank.update({
+        where: { id },
+        data: { questionCount: questions.length },
+      });
+    }
+
+    return await this.getQuestionBankById(id);
   }
 
   /**
