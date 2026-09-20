@@ -45,7 +45,7 @@ export const config = {
     secure: process.env.SMTP_SECURE === "true" || process.env.SMTP_PORT === "465",
     user: process.env.SMTP_USER || "",
     pass: process.env.SMTP_PASS || "",
-    from: process.env.EMAIL_FROM || "Kawan App <no-reply@kawan.com>",
+    from: process.env.EMAIL_FROM || "Medical Exam Pro <no-reply@kawan.com>",
   },
   cloudinary: {
     cloudName: process.env.CLOUDINARY_CLOUD_NAME || "",

@@ -43,6 +43,24 @@ export class QuestionBankController {
     }
   };
 
+  public getQuestionBankBySpecialty = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { specialty } = req.params;
+      const summaryOnly = req.query.summary === "true" || req.query.summary === "1";
+      const data = await this.service.getQuestionBankBySpecialty(specialty as string, summaryOnly);
+      res.status(200).json({
+        success: true,
+        data,
+      });
+    } catch (error: any) {
+      AppLogger.error("Failed to fetch question bank by specialty:", { error });
+      res.status(404).json({
+        success: false,
+        message: error.message || "Question bank not found for specialty",
+      });
+    }
+  };
+
   public createQuestionBank = async (req: Request, res: Response): Promise<void> => {
     try {
       const data = await this.service.createQuestionBank(req.body);

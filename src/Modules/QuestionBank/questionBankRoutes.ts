@@ -6,6 +6,7 @@ export function createQuestionBankRoutes(controller: QuestionBankController): Ro
   const router = Router();
 
   router.get("/", optionalAuthenticate, controller.getAllQuestionBanks);
+  router.get("/specialty/:specialty", optionalAuthenticate, controller.getQuestionBankBySpecialty);
   router.get("/:id", optionalAuthenticate, controller.getQuestionBankById);
 
   // Attempt routes

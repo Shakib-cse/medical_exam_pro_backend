@@ -1,7 +1,32 @@
 import { PrismaClient } from "../../generated/prisma";
 
+interface CacheEntry<T> {
+  data: T;
+  cachedAt: number;
+}
+
 export class QuestionBankService {
+  private specialtySummaryCache = new Map<string, CacheEntry<any>>();
+  private specialtyFullCache = new Map<string, CacheEntry<any>>();
+  private allBanksCache: CacheEntry<any> | null = null;
+  private readonly CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
   constructor(private prisma: PrismaClient) { }
+
+  /**
+   * Invalidate in-memory caches when question banks or attempts change
+   */
+  public clearCache(specialty?: string) {
+    if (specialty) {
+      const lower = specialty.toLowerCase().trim();
+      this.specialtySummaryCache.delete(lower);
+      this.specialtyFullCache.delete(lower);
+    } else {
+      this.specialtySummaryCache.clear();
+      this.specialtyFullCache.clear();
+    }
+    this.allBanksCache = null;
+  }
 
   /**
    * Helper to format attempt date into relative string ("Today", "1 day ago", "X days ago")
@@ -30,10 +55,18 @@ export class QuestionBankService {
    * Get all question bank modules
    */
   async getAllQuestionBanks(userId?: string) {
+    if (!userId && this.allBanksCache && Date.now() - this.allBanksCache.cachedAt < this.CACHE_TTL_MS) {
+      return this.allBanksCache.data;
+    }
+
     const banks = await this.prisma.questionBank.findMany({
       where: { isActive: true },
       include: {
         questions: {
+          select: {
+            id: true,
+            subTopic: true,
+          },
           orderBy: { order: "asc" },
         },
         attempts: userId
@@ -46,7 +79,7 @@ export class QuestionBankService {
       orderBy: { createdAt: "desc" },
     });
 
-    return banks.map((bank) => {
+    const result = banks.map((bank) => {
       const qCount = bank.questions && bank.questions.length > 0 ? bank.questions.length : (bank.questionCount || 0);
       const bankAttempts = bank.attempts || [];
       const completedAttempts = bankAttempts.filter((a) => a.status === "COMPLETED");
@@ -67,6 +100,14 @@ export class QuestionBankService {
         }
       }
 
+      const subTopics = Array.from(
+        new Set(
+          (bank.questions || [])
+            .map((q) => q.subTopic)
+            .filter((st): st is string => Boolean(st && st.trim()))
+        )
+      ).sort();
+
       return {
         id: bank.id,
         title: bank.title,
@@ -78,13 +119,22 @@ export class QuestionBankService {
         difficultyType: bank.difficultyType,
         durationMinutes: bank.durationMinutes,
         questionCount: qCount,
-        questions: bank.questions,
+        subTopics,
         avgAcc,
         isUnattempted,
         lastAttempted: lastAttemptedStr,
         createdAt: bank.createdAt,
       };
     });
+
+    if (!userId) {
+      this.allBanksCache = {
+        data: result,
+        cachedAt: Date.now(),
+      };
+    }
+
+    return result;
   }
 
   /**
@@ -104,7 +154,247 @@ export class QuestionBankService {
       throw new Error("Question Bank module not found");
     }
 
-    return bank;
+    const subTopics = Array.from(
+      new Set(
+        (bank.questions || [])
+          .map((q) => q.subTopic)
+          .filter((st): st is string => Boolean(st && st.trim()))
+      )
+    ).sort();
+
+    return {
+      ...bank,
+      subTopics,
+    };
+  }
+
+  /**
+   * Get question bank by specialty title or slug with distinct subtopics.
+   * When summaryOnly is true, skips all heavy question texts/explanations/cases for instant load.
+   */
+  async getQuestionBankBySpecialty(specialtyOrSlug: string, summaryOnly: boolean = false) {
+    const slugMap: Record<string, string> = {
+      cardiovascular: "Cardiovascular Medicine",
+      dermatology: "Dermatology",
+      ent: "ENT",
+      endocrinology: "Endocrinology & Diabetes",
+      gastroenterology: "Gastroenterology & Hepatology",
+      immunology: "Genetics & Immunology",
+      haematology: "Haematology & Oncology",
+      infectious: "Infectious Diseases",
+      neurology: "Neurology",
+      ophthalmology: "Ophthalmology",
+      paediatrics: "Paediatrics",
+      pharmacology: "Pharmacology",
+      psychiatry: "Psychiatry",
+      renal: "Renal Medicine & Urology",
+      reproductive: "Reproductive Medicine",
+      respiratory: "Respiratory Medicine",
+      musculoskeletal: "Rheumatology & Musculoskeletal Medicine",
+      surgery: "Surgery & Orthopaedics",
+    };
+
+    const normSlug = specialtyOrSlug.toLowerCase().trim();
+    const targetSpecialty = slugMap[normSlug] || specialtyOrSlug;
+    const targetLower = targetSpecialty.toLowerCase().trim();
+
+    // 1. Check in-memory caches
+    if (summaryOnly) {
+      const cachedSummary =
+        this.specialtySummaryCache.get(normSlug) ||
+        this.specialtySummaryCache.get(targetLower);
+      if (cachedSummary && Date.now() - cachedSummary.cachedAt < this.CACHE_TTL_MS) {
+        return cachedSummary.data;
+      }
+
+      const cachedFull =
+        this.specialtyFullCache.get(normSlug) ||
+        this.specialtyFullCache.get(targetLower);
+      if (cachedFull && Date.now() - cachedFull.cachedAt < this.CACHE_TTL_MS) {
+        const { questions, ...rest } = cachedFull.data;
+        const derivedSummary = {
+          ...rest,
+          questionCount: questions?.length || rest.questionCount || 0,
+        };
+        this.specialtySummaryCache.set(normSlug, { data: derivedSummary, cachedAt: Date.now() });
+        this.specialtySummaryCache.set(targetLower, { data: derivedSummary, cachedAt: Date.now() });
+        return derivedSummary;
+      }
+    } else {
+      const cachedFull =
+        this.specialtyFullCache.get(normSlug) ||
+        this.specialtyFullCache.get(targetLower);
+      if (cachedFull && Date.now() - cachedFull.cachedAt < this.CACHE_TTL_MS) {
+        return cachedFull.data;
+      }
+    }
+
+    // 2. Query from database
+    if (summaryOnly) {
+      const bank = await this.prisma.questionBank.findFirst({
+        where: {
+          OR: [
+            { specialty: targetSpecialty },
+            { title: targetSpecialty },
+            { specialty: { contains: specialtyOrSlug } },
+            { title: { contains: specialtyOrSlug } },
+          ],
+        },
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          specialty: true,
+          category: true,
+          type: true,
+          difficultyBadge: true,
+          difficultyType: true,
+          durationMinutes: true,
+          questionCount: true,
+          isActive: true,
+          createdAt: true,
+          updatedAt: true,
+          questions: {
+            select: {
+              id: true,
+              subTopic: true,
+              questionType: true,
+            },
+            orderBy: { order: "asc" },
+          },
+          attempts: {
+            select: {
+              totalQuestions: true,
+              correctAnswers: true,
+              timeTakenSeconds: true,
+              createdAt: true,
+            },
+            orderBy: { createdAt: "desc" },
+          },
+        },
+      });
+
+      if (!bank) {
+        throw new Error(`Question bank not found for specialty: ${specialtyOrSlug}`);
+      }
+
+      const subTopics = Array.from(
+        new Set(
+          (bank.questions || [])
+            .map((q) => q.subTopic)
+            .filter((st): st is string => Boolean(st && st.trim()))
+        )
+      ).sort();
+
+      const attempts = bank.attempts || [];
+      let dbAttempted = 0;
+      let dbCorrect = 0;
+      let dbTotalTime = 0;
+      for (const a of attempts) {
+        dbAttempted += a.totalQuestions || 0;
+        dbCorrect += a.correctAnswers || 0;
+        dbTotalTime += a.timeTakenSeconds || 0;
+      }
+      const dbAccuracy = dbAttempted > 0 ? Math.round((dbCorrect / dbAttempted) * 100) : 0;
+      const dbAvgSec = dbAttempted > 0 ? Math.round(dbTotalTime / dbAttempted) : 0;
+
+      const summaryResult = {
+        id: bank.id,
+        title: bank.title,
+        description: bank.description,
+        specialty: bank.specialty,
+        category: bank.category,
+        type: bank.type,
+        difficultyBadge: bank.difficultyBadge,
+        difficultyType: bank.difficultyType,
+        durationMinutes: bank.durationMinutes,
+        questionCount: bank.questions?.length || bank.questionCount || 0,
+        subTopics,
+        stats: {
+          attempted: dbAttempted,
+          correct: dbCorrect,
+          accuracy: dbAccuracy,
+          averageTimeSeconds: dbAvgSec,
+        },
+        createdAt: bank.createdAt,
+        updatedAt: bank.updatedAt,
+      };
+
+      const now = Date.now();
+      this.specialtySummaryCache.set(normSlug, { data: summaryResult, cachedAt: now });
+      this.specialtySummaryCache.set(targetLower, { data: summaryResult, cachedAt: now });
+
+      return summaryResult;
+    }
+
+    // Full query including questions
+    const bank = await this.prisma.questionBank.findFirst({
+      where: {
+        OR: [
+          { specialty: targetSpecialty },
+          { title: targetSpecialty },
+          { specialty: { contains: specialtyOrSlug } },
+          { title: { contains: specialtyOrSlug } },
+        ],
+      },
+      include: {
+        questions: {
+          orderBy: { order: "asc" },
+        },
+        attempts: {
+          orderBy: { createdAt: "desc" },
+        },
+      },
+    });
+
+    if (!bank) {
+      throw new Error(`Question bank not found for specialty: ${specialtyOrSlug}`);
+    }
+
+    const subTopics = Array.from(
+      new Set(
+        (bank.questions || [])
+          .map((q) => q.subTopic)
+          .filter((st): st is string => Boolean(st && st.trim()))
+      )
+    ).sort();
+
+    const attempts = bank.attempts || [];
+    let dbAttempted = 0;
+    let dbCorrect = 0;
+    let dbTotalTime = 0;
+    for (const a of attempts) {
+      dbAttempted += a.totalQuestions || 0;
+      dbCorrect += a.correctAnswers || 0;
+      dbTotalTime += a.timeTakenSeconds || 0;
+    }
+    const dbAccuracy = dbAttempted > 0 ? Math.round((dbCorrect / dbAttempted) * 100) : 0;
+    const dbAvgSec = dbAttempted > 0 ? Math.round(dbTotalTime / dbAttempted) : 0;
+
+    const fullResult = {
+      ...bank,
+      subTopics,
+      stats: {
+        attempted: dbAttempted,
+        correct: dbCorrect,
+        accuracy: dbAccuracy,
+        averageTimeSeconds: dbAvgSec,
+      },
+    };
+
+    const now = Date.now();
+    this.specialtyFullCache.set(normSlug, { data: fullResult, cachedAt: now });
+    this.specialtyFullCache.set(targetLower, { data: fullResult, cachedAt: now });
+
+    const { questions, ...rest } = fullResult;
+    const summaryData = {
+      ...rest,
+      questionCount: questions?.length || rest.questionCount || 0,
+    };
+    this.specialtySummaryCache.set(normSlug, { data: summaryData, cachedAt: now });
+    this.specialtySummaryCache.set(targetLower, { data: summaryData, cachedAt: now });
+
+    return fullResult;
   }
 
   /**
@@ -357,7 +647,11 @@ export class QuestionBankService {
       where: { id: attemptId, userId },
       include: {
         questionBank: {
-          include: { questions: true },
+          include: {
+            questions: {
+              select: { id: true, correctAnswer: true },
+            },
+          },
         },
       },
     });
@@ -389,7 +683,19 @@ export class QuestionBankService {
         timeTakenSeconds: payload.timeTakenSeconds,
         completedAt: new Date(),
       },
+      include: {
+        questionBank: {
+          select: { specialty: true, title: true },
+        },
+      },
     });
+
+    if (updated?.questionBank?.specialty) {
+      this.clearCache(updated.questionBank.specialty);
+    }
+    if (updated?.questionBank?.title) {
+      this.clearCache(updated.questionBank.title);
+    }
 
     return updated;
   }

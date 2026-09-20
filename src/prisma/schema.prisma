@@ -4,7 +4,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
 }
 
 // ------------------------------------
@@ -69,16 +69,16 @@ enum SubscriptionStatus {
 // ------------------------------------
 
 model Role {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id          String   @id @default(uuid())
   name        String   @unique // e.g., 'admin', 'agent', 'client', 'user'
-  description String?
+  description String?  @db.Text
   users       User[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @default(now()) @updatedAt
 }
 
 model User {
-  id              String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id              String        @id @default(uuid())
   email           String        @unique
   username        String?       @unique
   firstName       String
@@ -87,12 +87,12 @@ model User {
   status          AccountStatus @default(pending_verification)
   password        String
   emailVerifiedAt DateTime?
-  bio             String?
+  bio             String?       @db.Text
   targetExam      String?
-  avatarUrl       String?
+  avatarUrl       String?       @db.Text
 
   // Role Relation
-  roleId String @db.Uuid
+  roleId String
   role   Role   @relation(fields: [roleId], references: [id])
 
   // Relations
@@ -112,7 +112,7 @@ model User {
 }
 
 model Country {
-  id        String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id        String  @id @default(uuid())
   name      String  @unique
   slug      String  @unique
   continent String?
@@ -126,37 +126,37 @@ model Country {
 }
 
 model MarketInsight {
-  id                  String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  countryId           String  @db.Uuid
+  id                  String  @id @default(uuid())
+  countryId           String
   country             Country @relation(fields: [countryId], references: [id], onDelete: Cascade)
   regionName          String
-  description         String?
+  description         String? @db.Text
   averageYield        Float
   averageAppreciation Float
   availableProperties Int     @default(0)
   vacancyRate         Float?
   indicators          Json    @default("[]") // For things like "High demand", etc.
-  image               String?
+  image               String? @db.Text
 
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
 }
 
 model Property {
-  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id          String  @id @default(uuid())
   title       String
-  description String?
+  description String? @db.Text
   location    String
   region      String?
 
-  countryId String?  @db.Uuid
+  countryId String?
   country   Country? @relation(fields: [countryId], references: [id], onDelete: SetNull)
 
   price        Float
   yield        Float // Expected or actual yield percentage
   appreciation Float // Expected appreciation percentage
   type         String // e.g., Apartment, Studio, Villa, etc.
-  image        String?
+  image        String? @db.Text
   sqm          Float
   bedrooms     Int     @default(0)
 
@@ -166,7 +166,7 @@ model Property {
   locationType LocationType   @default(CENTRE)
   condition    String         @default("Standard") // e.g., Premium, High-End, Basic
 
-  agentId String? @db.Uuid
+  agentId String?
   agent   User?   @relation(name: "PropertyAgent", fields: [agentId], references: [id], onDelete: SetNull)
 
   calculations SavedCalculation[]
@@ -177,8 +177,8 @@ model Property {
 }
 
 model MatchAlert {
-  id     String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId String @db.Uuid
+  id     String @id @default(uuid())
+  userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   name     String?
@@ -190,7 +190,7 @@ model MatchAlert {
 }
 
 model NewsletterSubscriber {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id        String   @id @default(uuid())
   email     String   @unique
   markets   Json     @default("[]")
   topics    Json     @default("[]")
@@ -200,8 +200,8 @@ model NewsletterSubscriber {
 }
 
 model Subscription {
-  id     String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId String @db.Uuid
+  id     String @id @default(uuid())
+  userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   planType SubscriptionPlan   @default(INVESTOR_FREE)
@@ -216,11 +216,11 @@ model Subscription {
 }
 
 model SavedCalculation {
-  id     String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId String @db.Uuid
+  id     String @id @default(uuid())
+  userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  propertyId String?   @db.Uuid
+  propertyId String?
   property   Property? @relation(fields: [propertyId], references: [id], onDelete: SetNull)
 
   name        String // E.g., 'Lisbon Apartment Calc'
@@ -232,16 +232,16 @@ model SavedCalculation {
 }
 
 model BlogPost {
-  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id          String  @id @default(uuid())
   title       String
   slug        String  @unique
-  excerpt     String?
-  content     String // markdown or HTML text
+  excerpt     String? @db.Text
+  content     String  @db.LongText // markdown or HTML text
   author      String // Can be a relation to User or just string
   readTime    String? // E.g., '8 min read'
   category    String // E.g., 'Market Trends'
   country     String? // E.g., 'Portugal'
-  imageUrl    String?
+  imageUrl    String? @db.Text
   isFeatured  Boolean @default(false)
   isPublished Boolean @default(false)
 
@@ -250,9 +250,9 @@ model BlogPost {
 }
 
 model MockExam {
-  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id              String   @id @default(uuid())
   title           String
-  description     String?
+  description     String?  @db.Text
   difficultyBadge String   @default("MODERATE") // "MODERATE" | "ADVANCED" | "CLINICAL" | "STANDARD"
   difficultyType  String   @default("moderate") // "moderate" | "advanced" | "clinical" | "standard"
   durationMinutes Int      @default(45)
@@ -268,13 +268,13 @@ model MockExam {
 }
 
 model MockQuestion {
-  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  mockExamId    String   @db.Uuid
+  id            String   @id @default(uuid())
+  mockExamId    String
   mockExam      MockExam @relation(fields: [mockExamId], references: [id], onDelete: Cascade)
-  questionText  String
+  questionText  String   @db.Text
   options       Json     // e.g. ["Option A", "Option B", "Option C", "Option D"]
   correctAnswer Int      // 0-indexed
-  explanation   String?
+  explanation   String?  @db.Text
   order         Int      @default(0)
 
   createdAt DateTime @default(now())
@@ -282,10 +282,10 @@ model MockQuestion {
 }
 
 model MockExamAttempt {
-  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId            String    @db.Uuid
+  id                String    @id @default(uuid())
+  userId            String
   user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  mockExamId        String    @db.Uuid
+  mockExamId        String
   mockExam          MockExam  @relation(fields: [mockExamId], references: [id], onDelete: Cascade)
   status            String    @default("IN_PROGRESS") // "IN_PROGRESS" | "COMPLETED"
   scorePercentage   Float?
@@ -300,9 +300,9 @@ model MockExamAttempt {
 }
 
 model QuestionBank {
-  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id              String   @id @default(uuid())
   title           String
-  description     String?
+  description     String?  @db.Text
   specialty       String   @default("General Medicine")
   category        String   @default("Clinical Practice")
   type            String   @default("Clinical") // "Clinical" | "SJT"
@@ -320,25 +320,28 @@ model QuestionBank {
 }
 
 model BankQuestion {
-  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  questionBankId String       @db.Uuid
+  id             String       @id @default(uuid())
+  questionBankId String
   questionBank   QuestionBank @relation(fields: [questionBankId], references: [id], onDelete: Cascade)
-  questionText   String
+  questionText   String       @db.Text
   options        Json         // e.g. ["Option A", "Option B", "Option C", "Option D"]
-  correctAnswer  Int          // 0-indexed
-  explanation    String?
+  correctAnswer  Int          @default(0) // 0-indexed
+  explanation    String?      @db.Text
   subTopic       String?
   order          Int          @default(0)
+  questionType   String       @default("SBA") // "SBA" | "EMQ"
+  themeNumber    Int?
+  cases          Json?        // For EMQ cases: [{ id, caseNumber, vignette, question, correctOption, explanation }]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
 }
 
 model BankAttempt {
-  id               String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId           String       @db.Uuid
+  id               String       @id @default(uuid())
+  userId           String
   user             User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  questionBankId   String       @db.Uuid
+  questionBankId   String
   questionBank     QuestionBank @relation(fields: [questionBankId], references: [id], onDelete: Cascade)
   status           String       @default("IN_PROGRESS") // "IN_PROGRESS" | "COMPLETED"
   scorePercentage  Float?
@@ -353,7 +356,7 @@ model BankAttempt {
 }
 
 model DashboardContent {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id        String   @id @default(uuid())
   section   String   @unique // "clinical_topics" | "professional_dilemmas" | "daily_goal"
   title     String?
   content   Json     // Flexible JSON for each section's data structure

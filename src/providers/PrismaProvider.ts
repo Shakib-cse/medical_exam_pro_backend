@@ -70,14 +70,35 @@ export class PrismaProvider implements InfrastructureProvider<PrismaClient> {
       }
     }
 
-    const errorMessage = err.message || "";
+    const errorMessage = err?.message || String(err || "");
+    const isConnectionOrPoolError =
+      /pool timeout|failed to retrieve a connection|mariadb|mysql|prisma|ETIMEDOUT|ECONNREFUSED|ECONNRESET|database connection|not allowed to connect|access denied|socket closed/i.test(
+        errorMessage
+      ) ||
+      err?.name === "PrismaClientInitializationError" ||
+      err?.sqlState === "08001" ||
+      err?.sqlState === "08004" ||
+      err?.code === "ER_ACCESS_DENIED_ERROR" ||
+      err?.code === "ER_HOST_NOT_PRIVILEGED";
+
+    if (isConnectionOrPoolError) {
+      return new AppError({
+        statusCode: HTTPStatusCode.SERVICE_UNAVAILABLE,
+        message:
+          "Database service is temporarily unavailable. Please try again in a few moments.",
+        code: "DATABASE_UNAVAILABLE",
+        details: { originalError: errorMessage },
+      });
+    }
+
     if (
       errorMessage.includes("PrismaClient") ||
       errorMessage.includes("database connection")
     ) {
       return new AppError({
         statusCode: HTTPStatusCode.INTERNAL_SERVER_ERROR,
-        message: "Database connection or execution failed",
+        message:
+          "Database service is temporarily unavailable. Please try again in a few moments.",
         code: "DATABASE_RUNTIME_ERROR",
         details: { originalError: errorMessage },
       });

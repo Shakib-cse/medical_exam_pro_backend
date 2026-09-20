@@ -99,10 +99,19 @@ function normalizeError(err: unknown): AppError {
 
   // 7. Generic Error
   if (err instanceof Error) {
+    const isDbOrPoolError =
+      /pool timeout|failed to retrieve a connection|mariadb|mysql|prisma|ETIMEDOUT|ECONNREFUSED|ECONNRESET|database connection|not allowed to connect|access denied/i.test(
+        err.message
+      );
+
     return new AppError({
-      statusCode: HTTPStatusCode.INTERNAL_SERVER_ERROR,
-      message: err.message || "Internal server error",
-      code: "INTERNAL_ERROR",
+      statusCode: isDbOrPoolError
+        ? HTTPStatusCode.SERVICE_UNAVAILABLE
+        : HTTPStatusCode.INTERNAL_SERVER_ERROR,
+      message: isDbOrPoolError
+        ? "Database service is temporarily unavailable. Please try again in a few moments."
+        : err.message || "Internal server error",
+      code: isDbOrPoolError ? "DATABASE_UNAVAILABLE" : "INTERNAL_ERROR",
       details: { originalError: err.message, stack: err.stack },
     });
   }
