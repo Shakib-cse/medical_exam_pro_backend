@@ -1,10 +1,21 @@
 import { PrismaClient } from "../../generated/prisma";
 
 export class OverviewService {
+  private cachedClinicalTopics: any = null;
+  private cachedProfessionalDilemmas: any = null;
+
   constructor(private prisma: PrismaClient) { }
 
   /**
-   * Get all dashboard content sections (clinical_topics, professional_dilemmas, daily_goal)
+   * Invalidate in-memory caches
+   */
+  public clearCache() {
+    this.cachedClinicalTopics = null;
+    this.cachedProfessionalDilemmas = null;
+  }
+
+  /**
+   * Get all dashboard content sections (clinical_topics, professional_dilemmas, daily_goal, question_reports, flagged_questions)
    */
   async getDashboardContent() {
     const sections = await this.prisma.dashboardContent.findMany({
@@ -19,6 +30,111 @@ export class OverviewService {
         content: section.content,
         isActive: section.isActive,
       };
+    }
+
+    // Dynamic synthesis for clinical_topics if not stored or empty
+    if (!result.clinical_topics || !Array.isArray(result.clinical_topics.content) || result.clinical_topics.content.length === 0) {
+      if (this.cachedClinicalTopics) {
+        result.clinical_topics = this.cachedClinicalTopics;
+      } else {
+        const banks = await this.prisma.questionBank.findMany({
+          where: { isActive: true },
+          select: {
+            id: true,
+            title: true,
+            specialty: true,
+            questionCount: true,
+          },
+          orderBy: { specialty: "asc" },
+        });
+
+        if (banks.length > 0) {
+          const topics = banks.map((bank) => {
+            const totalQ = bank.questionCount || 0;
+            const sbaCount = Math.ceil(totalQ / 2);
+            const emqCount = Math.floor(totalQ / 2);
+
+            return {
+              id: bank.id,
+              title: bank.title,
+              specialty: bank.specialty,
+              image: "https://images.unsplash.com/photo-1505751172876-fa1923c5c528?w=600&auto=format&fit=crop&q=80",
+              totalQ,
+              sbaCount,
+              emqCount,
+              category: "all",
+            };
+          });
+
+          result.clinical_topics = {
+            id: "dynamic_clinical_topics",
+            title: "Clinical Problem Solving",
+            content: topics,
+            isActive: true,
+          };
+          this.cachedClinicalTopics = result.clinical_topics;
+        }
+      }
+    }
+
+    // Dynamic synthesis for professional_dilemmas if not stored or empty
+    if (
+      !result.professional_dilemmas ||
+      !result.professional_dilemmas.content ||
+      !Array.isArray(result.professional_dilemmas.content) ||
+      result.professional_dilemmas.content.length === 0
+    ) {
+      if (this.cachedProfessionalDilemmas) {
+        result.professional_dilemmas = this.cachedProfessionalDilemmas;
+      } else {
+        const DOMAIN_IMAGE_MAP: Record<string, string> = {
+          "coping-with-pressure": "/images/dilemmas/coping-with-pressure.jpg",
+          "empathy-and-sensitivity": "/images/dilemmas/empathy-and-sensitivity.jpg",
+          "empathy-sensitivity": "/images/dilemmas/empathy-and-sensitivity.jpg",
+          "professionalism-and-integrity": "/images/dilemmas/professional-integrity.jpg",
+          "professionalism-integrity": "/images/dilemmas/professional-integrity.jpg",
+          "professional-integrity": "/images/dilemmas/professional-integrity.jpg",
+        };
+
+        const sjtBanks = await this.prisma.questionBank.findMany({
+          where: { type: "SJT", isActive: true },
+          select: {
+            id: true,
+            title: true,
+            description: true,
+            questionCount: true,
+          },
+          orderBy: { title: "asc" },
+        });
+
+        if (sjtBanks.length > 0) {
+          const cards = sjtBanks.map((bank) => {
+            const slug = bank.title.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+            const totalQ = bank.questionCount || 0;
+            const rankingCount = Math.ceil(totalQ / 2);
+            const select3Count = Math.floor(totalQ / 2);
+
+            return {
+              id: bank.id,
+              title: bank.title,
+              subtitle: bank.description || `Practice ${bank.title} questions`,
+              image: DOMAIN_IMAGE_MAP[slug] || `/images/dilemmas/${slug}.jpg`,
+              totalQ,
+              rankingCount,
+              select3Count,
+              topics: [],
+            };
+          });
+
+          result.professional_dilemmas = {
+            id: "dynamic_professional_dilemmas",
+            title: "Professional Dilemmas",
+            content: cards,
+            isActive: true,
+          };
+          this.cachedProfessionalDilemmas = result.professional_dilemmas;
+        }
+      }
     }
 
     return result;
@@ -165,9 +281,28 @@ export class OverviewService {
    * Admin: Upsert a dashboard content section
    */
   async upsertSection(section: string, payload: { title?: string; content: any; isActive?: boolean }) {
+    if (section === "clinical_topics") this.cachedClinicalTopics = null;
+    if (section === "professional_dilemmas") this.cachedProfessionalDilemmas = null;
+
     const existing = await this.prisma.dashboardContent.findUnique({
       where: { section },
     });
+
+    // Intelligent merge for arrays in flagged_questions and question_reports so entries are preserved
+    if (
+      (section === "flagged_questions" || section === "question_reports") &&
+      Array.isArray(payload.content) &&
+      existing?.content &&
+      Array.isArray(existing.content)
+    ) {
+      const mergedMap = new Map((existing.content as any[]).map((item) => [item.id, item]));
+      for (const item of payload.content) {
+        if (item.id) {
+          mergedMap.set(item.id, { ...(mergedMap.get(item.id) || {}), ...item });
+        }
+      }
+      payload.content = Array.from(mergedMap.values());
+    }
 
     if (existing) {
       return this.prisma.dashboardContent.update({
@@ -191,9 +326,183 @@ export class OverviewService {
   }
 
   /**
+   * Dedicated: Get candidate question reports
+   */
+  async getQuestionReports() {
+    const record = await this.prisma.dashboardContent.findUnique({
+      where: { section: "question_reports" },
+    });
+    return (record?.content as any[]) || [];
+  }
+
+  /**
+   * Dedicated: Add or update a single question report
+   */
+  async addQuestionReport(report: any) {
+    const reports = await this.getQuestionReports();
+    const repId = report.id || `rep-${Date.now()}`;
+    const idx = reports.findIndex(
+      (r: any) => r.id === repId || (r.questionId === report.questionId && r.userId === report.userId)
+    );
+    let updated: any[];
+    if (idx >= 0) {
+      updated = [...reports];
+      updated[idx] = { ...updated[idx], ...report, id: reports[idx].id };
+    } else {
+      updated = [{ ...report, id: repId }, ...reports];
+    }
+    await this.prisma.dashboardContent.upsert({
+      where: { section: "question_reports" },
+      update: { content: updated },
+      create: { section: "question_reports", title: "Question Reports", content: updated, isActive: true },
+    });
+    return updated;
+  }
+
+  /**
+   * Dedicated: Get candidate flagged questions
+   */
+  async getFlaggedQuestions() {
+    const record = await this.prisma.dashboardContent.findUnique({
+      where: { section: "flagged_questions" },
+    });
+    return (record?.content as any[]) || [];
+  }
+
+  /**
+   * Dedicated: Add or update a single flagged question
+   */
+  async addFlaggedQuestion(flag: any) {
+    const flags = await this.getFlaggedQuestions();
+    const flagId = flag.id;
+    const exists = flags.some((f: any) => f.id === flagId || (f.prompt && flag.prompt && f.prompt === flag.prompt));
+    let updated: any[];
+    if (!exists) {
+      updated = [flag, ...flags];
+    } else {
+      updated = flags.map((f: any) =>
+        f.id === flagId || (f.prompt && flag.prompt && f.prompt === flag.prompt) ? { ...f, ...flag } : f
+      );
+    }
+    await this.prisma.dashboardContent.upsert({
+      where: { section: "flagged_questions" },
+      update: { content: updated },
+      create: { section: "flagged_questions", title: "Flagged Questions", content: updated, isActive: true },
+    });
+    return updated;
+  }
+
+  /**
+   * Dedicated: Update a question report's status
+   */
+  async updateReportStatus(reportId: string, status: string) {
+    const reports = await this.getQuestionReports();
+    const updated = reports.map((r: any) => (r.id === reportId ? { ...r, status } : r));
+    await this.prisma.dashboardContent.upsert({
+      where: { section: "question_reports" },
+      update: { content: updated },
+      create: { section: "question_reports", title: "Question Reports", content: updated, isActive: true },
+    });
+    return updated;
+  }
+
+  /**
+   * Dedicated: Delete a question report
+   */
+  async deleteReport(reportId: string) {
+    const reports = await this.getQuestionReports();
+    const updated = reports.filter((r: any) => r.id !== reportId);
+    await this.prisma.dashboardContent.upsert({
+      where: { section: "question_reports" },
+      update: { content: updated },
+      create: { section: "question_reports", title: "Question Reports", content: updated, isActive: true },
+    });
+    return updated;
+  }
+
+  /**
+   * Dedicated: Delete a flagged question
+   */
+  async deleteFlaggedQuestion(flagId: string) {
+    const flags = await this.getFlaggedQuestions();
+    const updated = flags.filter((f: any) => f.id !== flagId);
+    await this.prisma.dashboardContent.upsert({
+      where: { section: "flagged_questions" },
+      update: { content: updated },
+      create: { section: "flagged_questions", title: "Flagged Questions", content: updated, isActive: true },
+    });
+    return updated;
+  }
+
+  /**
+   * Dedicated: Get candidate support inquiries / tickets
+   */
+  async getSupportTickets() {
+    const record = await this.prisma.dashboardContent.findUnique({
+      where: { section: "support_tickets" },
+    });
+    return (record?.content as any[]) || [];
+  }
+
+  /**
+   * Dedicated: Add a new candidate support ticket
+   */
+  async addSupportTicket(ticket: any) {
+    const tickets = await this.getSupportTickets();
+    const newTicket = {
+      id: ticket.id || `ticket-${Date.now()}`,
+      subject: ticket.subject || "General Support",
+      email: ticket.email || "",
+      description: ticket.description || "",
+      userName: ticket.userName || "Candidate",
+      userId: ticket.userId || "",
+      status: ticket.status || "open", // "open" | "in_progress" | "resolved"
+      createdAt: ticket.createdAt || new Date().toLocaleString(),
+    };
+    const updated = [newTicket, ...tickets];
+    await this.prisma.dashboardContent.upsert({
+      where: { section: "support_tickets" },
+      update: { content: updated },
+      create: { section: "support_tickets", title: "Support Tickets", content: updated, isActive: true },
+    });
+    return updated;
+  }
+
+  /**
+   * Dedicated: Update support ticket status
+   */
+  async updateSupportTicketStatus(ticketId: string, status: string) {
+    const tickets = await this.getSupportTickets();
+    const updated = tickets.map((t: any) => (t.id === ticketId ? { ...t, status } : t));
+    await this.prisma.dashboardContent.upsert({
+      where: { section: "support_tickets" },
+      update: { content: updated },
+      create: { section: "support_tickets", title: "Support Tickets", content: updated, isActive: true },
+    });
+    return updated;
+  }
+
+  /**
+   * Dedicated: Delete support ticket
+   */
+  async deleteSupportTicket(ticketId: string) {
+    const tickets = await this.getSupportTickets();
+    const updated = tickets.filter((t: any) => t.id !== ticketId);
+    await this.prisma.dashboardContent.upsert({
+      where: { section: "support_tickets" },
+      update: { content: updated },
+      create: { section: "support_tickets", title: "Support Tickets", content: updated, isActive: true },
+    });
+    return updated;
+  }
+
+  /**
    * Admin: Delete a dashboard content section
    */
   async deleteSection(section: string) {
+    if (section === "clinical_topics") this.cachedClinicalTopics = null;
+    if (section === "professional_dilemmas") this.cachedProfessionalDilemmas = null;
+
     const existing = await this.prisma.dashboardContent.findUnique({
       where: { section },
     });

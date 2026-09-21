@@ -19,8 +19,14 @@ export class QuestionBankService {
   public clearCache(specialty?: string) {
     if (specialty) {
       const lower = specialty.toLowerCase().trim();
+      const slug = lower.replace(/[^a-z0-9]+/g, "-");
+      const underscore = lower.replace(/[^a-z0-9]+/g, "_");
       this.specialtySummaryCache.delete(lower);
+      this.specialtySummaryCache.delete(slug);
+      this.specialtySummaryCache.delete(underscore);
       this.specialtyFullCache.delete(lower);
+      this.specialtyFullCache.delete(slug);
+      this.specialtyFullCache.delete(underscore);
     } else {
       this.specialtySummaryCache.clear();
       this.specialtyFullCache.clear();
@@ -52,6 +58,43 @@ export class QuestionBankService {
   }
 
   /**
+   * Helper to compute exact question counts (SBA + EMQ Cases for Clinical, Ranking + Select 3 for SJT)
+   */
+  private computeQuestionCounts(questions: any[] = [], fallbackCount: number = 0) {
+    let sbaCount = 0;
+    let emqCasesCount = 0;
+    let emqThemesCount = 0;
+    let rankingCount = 0;
+    let select3Count = 0;
+    for (const q of questions) {
+      if (q.questionType === "EMQ") {
+        emqThemesCount++;
+        if (Array.isArray(q.cases)) {
+          emqCasesCount += q.cases.length;
+        }
+      } else if (q.questionType === "RANKING") {
+        rankingCount++;
+      } else if (q.questionType === "SELECT_3") {
+        select3Count++;
+      } else {
+        sbaCount++;
+      }
+    }
+    const isSJT = rankingCount + select3Count > 0;
+    const total = isSJT
+      ? rankingCount + select3Count
+      : (sbaCount + emqCasesCount > 0 ? sbaCount + emqCasesCount : fallbackCount);
+    return {
+      questionCount: total,
+      sbaCount,
+      emqCount: emqCasesCount,
+      emqThemesCount,
+      rankingCount,
+      select3Count,
+    };
+  }
+
+  /**
    * Get all question bank modules
    */
   async getAllQuestionBanks(userId?: string) {
@@ -66,6 +109,8 @@ export class QuestionBankService {
           select: {
             id: true,
             subTopic: true,
+            questionType: true,
+            cases: true,
           },
           orderBy: { order: "asc" },
         },
@@ -80,7 +125,7 @@ export class QuestionBankService {
     });
 
     const result = banks.map((bank) => {
-      const qCount = bank.questions && bank.questions.length > 0 ? bank.questions.length : (bank.questionCount || 0);
+      const counts = this.computeQuestionCounts(bank.questions, bank.questionCount || 0);
       const bankAttempts = bank.attempts || [];
       const completedAttempts = bankAttempts.filter((a) => a.status === "COMPLETED");
       const latestCompleted = completedAttempts.length > 0 ? completedAttempts[0] : null;
@@ -118,7 +163,13 @@ export class QuestionBankService {
         difficultyBadge: bank.difficultyBadge,
         difficultyType: bank.difficultyType,
         durationMinutes: bank.durationMinutes,
-        questionCount: qCount,
+        questionCount: counts.questionCount,
+        totalQuestions: counts.questionCount,
+        sbaCount: counts.sbaCount,
+        emqCount: counts.emqCount,
+        emqThemesCount: counts.emqThemesCount,
+        rankingCount: counts.rankingCount,
+        select3Count: counts.select3Count,
         subTopics,
         avgAcc,
         isUnattempted,
@@ -154,6 +205,8 @@ export class QuestionBankService {
       throw new Error("Question Bank module not found");
     }
 
+    const counts = this.computeQuestionCounts(bank.questions, bank.questionCount || 0);
+
     const subTopics = Array.from(
       new Set(
         (bank.questions || [])
@@ -162,8 +215,24 @@ export class QuestionBankService {
       )
     ).sort();
 
+    const formattedQuestions = (bank.questions || []).map((q) => {
+      const casesData = q.cases as any;
+      return {
+        ...q,
+        idealOrder: casesData?.idealOrder || undefined,
+        correctAnswers: casesData?.correctAnswers || undefined,
+        peerStats: casesData?.peerStats || undefined,
+        totalAttempts: typeof casesData?.totalAttempts === "number" ? casesData.totalAttempts : 0,
+        selectionCounts: casesData?.selectionCounts || {},
+        instruction: casesData?.instruction || undefined,
+        references: casesData?.references || undefined,
+      };
+    });
+
     return {
       ...bank,
+      ...counts,
+      questions: formattedQuestions,
       subTopics,
     };
   }
@@ -192,6 +261,12 @@ export class QuestionBankService {
       respiratory: "Respiratory Medicine",
       musculoskeletal: "Rheumatology & Musculoskeletal Medicine",
       surgery: "Surgery & Orthopaedics",
+      "coping-with-pressure": "Coping with Pressure",
+      "empathy-and-sensitivity": "Empathy & Sensitivity",
+      "empathy-sensitivity": "Empathy & Sensitivity",
+      "professional-integrity": "Professionalism & Integrity",
+      "professionalism-and-integrity": "Professionalism & Integrity",
+      "professionalism-integrity": "Professionalism & Integrity",
     };
 
     const normSlug = specialtyOrSlug.toLowerCase().trim();
@@ -214,7 +289,6 @@ export class QuestionBankService {
         const { questions, ...rest } = cachedFull.data;
         const derivedSummary = {
           ...rest,
-          questionCount: questions?.length || rest.questionCount || 0,
         };
         this.specialtySummaryCache.set(normSlug, { data: derivedSummary, cachedAt: Date.now() });
         this.specialtySummaryCache.set(targetLower, { data: derivedSummary, cachedAt: Date.now() });
@@ -259,6 +333,7 @@ export class QuestionBankService {
               id: true,
               subTopic: true,
               questionType: true,
+              cases: true,
             },
             orderBy: { order: "asc" },
           },
@@ -298,6 +373,31 @@ export class QuestionBankService {
       const dbAccuracy = dbAttempted > 0 ? Math.round((dbCorrect / dbAttempted) * 100) : 0;
       const dbAvgSec = dbAttempted > 0 ? Math.round(dbTotalTime / dbAttempted) : 0;
 
+      const subTopicCounts: Record<string, { total: number; ranking: number; select3: number; sba: number; emq: number }> = {};
+      for (const q of bank.questions || []) {
+        if (!q.subTopic) continue;
+        const st = q.subTopic.trim();
+        if (!subTopicCounts[st]) {
+          subTopicCounts[st] = { total: 0, ranking: 0, select3: 0, sba: 0, emq: 0 };
+        }
+        if (q.questionType === "RANKING") {
+          subTopicCounts[st].ranking++;
+          subTopicCounts[st].total++;
+        } else if (q.questionType === "SELECT_3") {
+          subTopicCounts[st].select3++;
+          subTopicCounts[st].total++;
+        } else if (q.questionType === "EMQ") {
+          const cCount = Array.isArray(q.cases) ? q.cases.length : 1;
+          subTopicCounts[st].emq += cCount;
+          subTopicCounts[st].total += cCount;
+        } else {
+          subTopicCounts[st].sba++;
+          subTopicCounts[st].total++;
+        }
+      }
+
+      const counts = this.computeQuestionCounts(bank.questions, bank.questionCount || 0);
+
       const summaryResult = {
         id: bank.id,
         title: bank.title,
@@ -308,8 +408,15 @@ export class QuestionBankService {
         difficultyBadge: bank.difficultyBadge,
         difficultyType: bank.difficultyType,
         durationMinutes: bank.durationMinutes,
-        questionCount: bank.questions?.length || bank.questionCount || 0,
+        questionCount: counts.questionCount,
+        totalQuestions: counts.questionCount,
+        sbaCount: counts.sbaCount,
+        emqCount: counts.emqCount,
+        emqThemesCount: counts.emqThemesCount,
+        rankingCount: counts.rankingCount,
+        select3Count: counts.select3Count,
         subTopics,
+        subTopicCounts,
         stats: {
           attempted: dbAttempted,
           correct: dbCorrect,
@@ -371,9 +478,52 @@ export class QuestionBankService {
     const dbAccuracy = dbAttempted > 0 ? Math.round((dbCorrect / dbAttempted) * 100) : 0;
     const dbAvgSec = dbAttempted > 0 ? Math.round(dbTotalTime / dbAttempted) : 0;
 
+    const counts = this.computeQuestionCounts(bank.questions, bank.questionCount || 0);
+
+    const subTopicCounts: Record<string, { total: number; ranking: number; select3: number; sba: number; emq: number }> = {};
+    for (const q of bank.questions || []) {
+      if (!q.subTopic) continue;
+      const st = q.subTopic.trim();
+      if (!subTopicCounts[st]) {
+        subTopicCounts[st] = { total: 0, ranking: 0, select3: 0, sba: 0, emq: 0 };
+      }
+      if (q.questionType === "RANKING") {
+        subTopicCounts[st].ranking++;
+        subTopicCounts[st].total++;
+      } else if (q.questionType === "SELECT_3") {
+        subTopicCounts[st].select3++;
+        subTopicCounts[st].total++;
+      } else if (q.questionType === "EMQ") {
+        const cCount = Array.isArray(q.cases) ? q.cases.length : 1;
+        subTopicCounts[st].emq += cCount;
+        subTopicCounts[st].total += cCount;
+      } else {
+        subTopicCounts[st].sba++;
+        subTopicCounts[st].total++;
+      }
+    }
+
+    const formattedQuestions = (bank.questions || []).map((q) => {
+      const casesData = q.cases as any;
+      return {
+        ...q,
+        idealOrder: casesData?.idealOrder || undefined,
+        correctAnswers: casesData?.correctAnswers || undefined,
+        peerStats: casesData?.peerStats || undefined,
+        totalAttempts: typeof casesData?.totalAttempts === "number" ? casesData.totalAttempts : 0,
+        selectionCounts: casesData?.selectionCounts || {},
+        instruction: casesData?.instruction || undefined,
+        references: casesData?.references || undefined,
+      };
+    });
+
     const fullResult = {
       ...bank,
+      ...counts,
+      totalQuestions: counts.questionCount,
+      questions: formattedQuestions,
       subTopics,
+      subTopicCounts,
       stats: {
         attempted: dbAttempted,
         correct: dbCorrect,
@@ -389,7 +539,6 @@ export class QuestionBankService {
     const { questions, ...rest } = fullResult;
     const summaryData = {
       ...rest,
-      questionCount: questions?.length || rest.questionCount || 0,
     };
     this.specialtySummaryCache.set(normSlug, { data: summaryData, cachedAt: now });
     this.specialtySummaryCache.set(targetLower, { data: summaryData, cachedAt: now });
@@ -698,6 +847,97 @@ export class QuestionBankService {
     }
 
     return updated;
+  }
+
+  /**
+   * Record a candidate's answer for a question and dynamically recalculate peer selection percentages.
+   */
+  async recordQuestionAnswer(
+    questionId: string,
+    payload: {
+      selectedOptions?: string[]; // e.g. ["A", "C", "F"]
+      rankOrder?: string[];       // e.g. ["B", "D", "A", "C", "E"]
+      userId?: string;
+    }
+  ) {
+    const question = await this.prisma.bankQuestion.findUnique({
+      where: { id: questionId },
+      include: {
+        questionBank: {
+          select: { id: true, specialty: true, type: true },
+        },
+      },
+    });
+
+    if (!question) {
+      throw new Error(`Question ${questionId} not found`);
+    }
+
+    const casesData = ((question.cases as any) || {}) as Record<string, any>;
+    const selectedOptions = (payload.selectedOptions || []).map((o) => String(o).toUpperCase().trim());
+
+    // Extract valid option letter keys from question.options
+    const rawOptions = (Array.isArray(question.options) ? question.options : []) as string[];
+    const parsedLetters = rawOptions
+      .map((opt) => {
+        const match = String(opt).match(/^([A-Za-z])/);
+        return match ? match[1].toUpperCase() : "";
+      })
+      .filter(Boolean);
+
+    const optionKeys =
+      parsedLetters.length > 0
+        ? parsedLetters
+        : ["A", "B", "C", "D", "E", "F", "G", "H"].slice(0, rawOptions.length || 8);
+
+    // Real dynamic calculation: start from actual recorded user submissions
+    let totalAttempts = typeof casesData.totalAttempts === "number" ? casesData.totalAttempts : 0;
+    let selectionCounts: Record<string, number> = { ...(casesData.selectionCounts || {}) };
+
+    // Increment total attempts by 1
+    totalAttempts += 1;
+
+    // Increment counts for each option selected by the user
+    for (const opt of selectedOptions) {
+      if (optionKeys.includes(opt) || /^[A-Z]$/.test(opt)) {
+        selectionCounts[opt] = (selectionCounts[opt] || 0) + 1;
+      }
+    }
+
+    // Recalculate dynamic peer percentages (0 - 100%)
+    const updatedPeerStats: Record<string, number> = {};
+    for (const key of optionKeys) {
+      const count = selectionCounts[key] || 0;
+      updatedPeerStats[key] = Math.min(100, Math.max(0, Math.round((count / totalAttempts) * 100)));
+    }
+
+    const updatedCases = {
+      ...casesData,
+      peerStats: updatedPeerStats,
+      selectionCounts,
+      totalAttempts,
+    };
+
+    // Persist to MariaDB
+    await this.prisma.bankQuestion.update({
+      where: { id: questionId },
+      data: {
+        cases: updatedCases,
+      },
+    });
+
+    // Invalidate specialty cache so subsequent fetches get fresh peer stats
+    if (question.questionBank?.specialty) {
+      this.clearCache(question.questionBank.specialty);
+    }
+
+    return {
+      questionId,
+      peerStats: updatedPeerStats,
+      totalAttempts,
+      selectionCounts,
+      userSelections: selectedOptions,
+    };
   }
 }
 

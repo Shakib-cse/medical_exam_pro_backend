@@ -191,5 +191,26 @@ export class QuestionBankController {
       });
     }
   };
+
+  public recordQuestionAnswer = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { questionId } = req.params;
+      const userId = this.getUserId(req);
+      const data = await this.service.recordQuestionAnswer(questionId as string, {
+        ...req.body,
+        userId,
+      });
+      res.status(200).json({
+        success: true,
+        data,
+      });
+    } catch (error: any) {
+      AppLogger.error("Failed to record question answer:", { error });
+      res.status(400).json({
+        success: false,
+        message: error.message || "Failed to record question answer",
+      });
+    }
+  };
 }
 

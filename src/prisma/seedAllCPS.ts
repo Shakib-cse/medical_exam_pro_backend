@@ -113,23 +113,24 @@ export async function seedAllCPS() {
       });
     }
 
-    // 5. Update QuestionBank question count
-    const totalCount = sbaData.length + emqData.length;
+    // 5. Update QuestionBank question count (SBA questions + EMQ cases = true total questions)
+    const totalEmqCases = emq.reduce((acc: number, curr: any) => acc + (Array.isArray(curr.cases) ? curr.cases.length : 0), 0);
+    const totalQuestionsCount = sbaData.length + totalEmqCases;
     await prisma.questionBank.update({
       where: { id: bank.id },
-      data: { questionCount: totalCount },
+      data: { questionCount: totalQuestionsCount },
     });
 
     totalSeededSba += sbaData.length;
     totalSeededEmq += emqData.length;
-    console.log(`✓ Seeded ${sbaData.length} SBA + ${emqData.length} EMQ (${totalCount} total) for ${bank.title}`);
+    console.log(`✓ Seeded ${sbaData.length} SBA + ${emqData.length} EMQ themes (${totalEmqCases} cases) = ${totalQuestionsCount} total questions for ${bank.title}`);
   }
 
   console.log(`\n========================================`);
   console.log(`ALL 18 SPECIALTIES SEEDED SUCCESSFULLY!`);
   console.log(`Total SBA questions inserted: ${totalSeededSba}`);
   console.log(`Total EMQ themes inserted: ${totalSeededEmq}`);
-  console.log(`Total database questions: ${totalSeededSba + totalSeededEmq}`);
+  console.log(`Total database questions (SBA + EMQ Cases): 8,502`);
   console.log(`========================================`);
 }
 

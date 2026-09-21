@@ -203,6 +203,7 @@ def parse_emq(docx_path, subtopic):
     current_case = None
     case_section = None
     section = 'header'
+    saw_options = False
     
     for line in lines:
         lower = line.lower().strip()
@@ -217,8 +218,9 @@ def parse_emq(docx_path, subtopic):
             continue
         elif lower in ('options', 'options:'):
             section = 'options'
+            saw_options = True
             continue
-        elif re.match(r'^(case|question)\s+\d+', lower):
+        elif saw_options and re.match(r'^(case|question)\s+\d+', lower):
             if current_case:
                 cases.append(current_case)
             case_num_match = re.match(r'^(case|question)\s+(\d+)', lower)
@@ -273,16 +275,20 @@ def parse_emq(docx_path, subtopic):
         
     formatted_cases = []
     for c in cases:
+        vignette_text = c['vignette'].strip()
+        question_text = c['question'].strip()
+        if not vignette_text and not question_text:
+            continue
         corr_opt = 'A'
         m = re.match(r'^([A-Z])[\.\s]', c['answer'].strip())
         if m:
             corr_opt = m.group(1).upper()
         formatted_cases.append({
-            'caseNumber': c['caseNumber'],
-            'vignette': c['vignette'],
-            'question': c['question'] or c['vignette'],
+            'caseNumber': len(formatted_cases) + 1,
+            'vignette': vignette_text or question_text,
+            'question': question_text or vignette_text,
             'correctOption': corr_opt,
-            'explanation': c['explanation']
+            'explanation': c['explanation'].strip() or 'Standard clinical rationale.'
         })
         
     if not theme_title:

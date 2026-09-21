@@ -92,4 +92,143 @@ export class OverviewController {
       });
     }
   };
+
+  /**
+   * GET /api/v1/overview/reports
+   */
+  public getReports = async (_req: Request, res: Response): Promise<void> => {
+    try {
+      const data = await this.service.getQuestionReports();
+      res.status(200).json({ success: true, data });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  };
+
+  /**
+   * GET /api/v1/overview/flags
+   */
+  public getFlags = async (_req: Request, res: Response): Promise<void> => {
+    try {
+      const data = await this.service.getFlaggedQuestions();
+      res.status(200).json({ success: true, data });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  };
+
+  /**
+   * PATCH /api/v1/overview/reports/:id/status
+   */
+  public updateReportStatus = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const { status } = req.body;
+      const data = await this.service.updateReportStatus(id as string, status);
+      res.status(200).json({ success: true, data });
+    } catch (error: any) {
+      res.status(400).json({ success: false, message: error.message });
+    }
+  };
+
+  /**
+   * DELETE /api/v1/overview/reports/:id
+   */
+  public deleteReport = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const data = await this.service.deleteReport(id as string);
+      res.status(200).json({ success: true, data });
+    } catch (error: any) {
+      res.status(400).json({ success: false, message: error.message });
+    }
+  };
+
+  /**
+   * POST /api/v1/overview/reports
+   */
+  public addReport = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const data = await this.service.addQuestionReport(req.body);
+      res.status(201).json({ success: true, data });
+    } catch (error: any) {
+      res.status(400).json({ success: false, message: error.message });
+    }
+  };
+
+  /**
+   * POST /api/v1/overview/flags
+   */
+  public addFlag = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const data = await this.service.addFlaggedQuestion(req.body);
+      res.status(201).json({ success: true, data });
+    } catch (error: any) {
+      res.status(400).json({ success: false, message: error.message });
+    }
+  };
+
+  /**
+   * DELETE /api/v1/overview/flags/:id
+   */
+  public deleteFlag = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const data = await this.service.deleteFlaggedQuestion(id as string);
+      res.status(200).json({ success: true, data });
+    } catch (error: any) {
+      res.status(400).json({ success: false, message: error.message });
+    }
+  };
+
+  /**
+   * GET /api/v1/overview/support
+   */
+  public getSupportTickets = async (_req: Request, res: Response): Promise<void> => {
+    try {
+      const data = await this.service.getSupportTickets();
+      res.status(200).json({ success: true, data });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  };
+
+  /**
+   * POST /api/v1/overview/support
+   */
+  public createSupportTicket = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const data = await this.service.addSupportTicket(req.body);
+      res.status(201).json({ success: true, data });
+    } catch (error: any) {
+      res.status(400).json({ success: false, message: error.message });
+    }
+  };
+
+  /**
+   * PATCH /api/v1/overview/support/:id/status
+   */
+  public updateSupportTicketStatus = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const { status } = req.body;
+      const data = await this.service.updateSupportTicketStatus(id as string, status);
+      res.status(200).json({ success: true, data });
+    } catch (error: any) {
+      res.status(400).json({ success: false, message: error.message });
+    }
+  };
+
+  /**
+   * DELETE /api/v1/overview/support/:id
+   */
+  public deleteSupportTicket = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const data = await this.service.deleteSupportTicket(id as string);
+      res.status(200).json({ success: true, data });
+    } catch (error: any) {
+      res.status(400).json({ success: false, message: error.message });
+    }
+  };
 }

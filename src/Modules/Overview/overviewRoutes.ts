@@ -13,5 +13,21 @@ export function createOverviewRoutes(controller: OverviewController): Router {
   router.put("/content/:section", controller.upsertSection);
   router.delete("/content/:section", controller.deleteSection);
 
+  // Dedicated reports and flags routes
+  router.get("/reports", controller.getReports);
+  router.post("/reports", controller.addReport);
+  router.patch("/reports/:id/status", controller.updateReportStatus);
+  router.delete("/reports/:id", controller.deleteReport);
+
+  router.get("/flags", controller.getFlags);
+  router.post("/flags", controller.addFlag);
+  router.delete("/flags/:id", controller.deleteFlag);
+
+  // Dedicated support tickets routes
+  router.get("/support", controller.getSupportTickets);
+  router.post("/support", controller.createSupportTicket);
+  router.patch("/support/:id/status", controller.updateSupportTicketStatus);
+  router.delete("/support/:id", controller.deleteSupportTicket);
+
   return router;
 }
