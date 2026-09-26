@@ -10,7 +10,7 @@ export class MockExamService {
   async getMockExams(userId?: string) {
     const mockExams = await this.prisma.mockExam.findMany({
       where: { isActive: true },
-      orderBy: { createdAt: "asc" },
+      orderBy: [{ examNumber: "asc" }, { createdAt: "asc" }],
       include: {
         _count: {
           select: { questions: true },
@@ -19,18 +19,26 @@ export class MockExamService {
     });
 
     if (!userId) {
-      return mockExams.map((exam) => ({
+      return mockExams.map((exam, idx) => ({
         id: exam.id,
+        examNumber: exam.examNumber || idx + 1,
         title: exam.title,
         description: exam.description,
         difficultyBadge: exam.difficultyBadge,
         difficultyType: exam.difficultyType,
         duration: `${exam.durationMinutes} mins`,
         durationMinutes: exam.durationMinutes,
+        cpsDurationMinutes: exam.cpsDurationMinutes,
+        pdDurationMinutes: exam.pdDurationMinutes,
+        breakDurationMinutes: exam.breakDurationMinutes,
         questions: exam._count.questions || exam.questionCount,
+        cpsQuestionCount: exam.cpsQuestionCount,
+        pdQuestionCount: exam.pdQuestionCount,
         category: exam.category,
         notAttempted: true,
         bestScore: null,
+        score: 0,
+        dateTaken: "Not attempted yet",
         progress: 0,
         status: "Not started",
         actionText: "Start",
@@ -38,39 +46,45 @@ export class MockExamService {
     }
 
     // Fetch user attempts
-    const attempts = userId
-      ? await this.prisma.mockExamAttempt.findMany({
-        where: { userId },
-        orderBy: { createdAt: "desc" },
-      })
-      : [];
+    const attempts = await this.prisma.mockExamAttempt.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+    });
 
-    return mockExams.map((exam) => {
+    return mockExams.map((exam, idx) => {
       const examAttempts = attempts.filter((a) => a.mockExamId === exam.id);
       const completedAttempts = examAttempts.filter((a) => a.status === "COMPLETED");
 
       let bestScore: string | null = null;
+      let scoreNum = 0;
       if (completedAttempts.length > 0) {
-        const maxScore = Math.max(...completedAttempts.map((a) => a.scorePercentage || 0));
-        bestScore = `${Math.round(maxScore)}%`;
+        scoreNum = Math.max(...completedAttempts.map((a) => a.scorePercentage || 0));
+        bestScore = `${Math.round(scoreNum)}%`;
       }
 
       const notAttempted = examAttempts.length === 0;
-
       const latestAttempt = examAttempts[0];
       let status: "Completed" | "In progress" | "Not started" = "Not started";
       let actionText: "Restart" | "Resume" | "Start" = "Start";
       let progress = 0;
+      let dateTaken = "Not attempted yet";
 
       if (latestAttempt) {
         if (latestAttempt.status === "COMPLETED") {
           status = "Completed";
           actionText = "Restart";
           progress = 100;
+          if (latestAttempt.completedAt) {
+            dateTaken = new Date(latestAttempt.completedAt).toLocaleDateString("en-US", {
+              day: "numeric",
+              month: "short",
+              year: "numeric",
+            });
+          }
         } else {
           status = "In progress";
           actionText = "Resume";
-          const answeredCount = Object.keys(latestAttempt.userAnswers as object || {}).length;
+          const answeredCount = Object.keys((latestAttempt.userAnswers as object) || {}).length;
           const totalQ = exam._count.questions || exam.questionCount || 1;
           progress = Math.min(100, Math.round((answeredCount / totalQ) * 100));
         }
@@ -78,16 +92,24 @@ export class MockExamService {
 
       return {
         id: exam.id,
+        examNumber: exam.examNumber || idx + 1,
         title: exam.title,
         description: exam.description,
         difficultyBadge: exam.difficultyBadge,
         difficultyType: exam.difficultyType,
         duration: `${exam.durationMinutes} mins`,
         durationMinutes: exam.durationMinutes,
+        cpsDurationMinutes: exam.cpsDurationMinutes,
+        pdDurationMinutes: exam.pdDurationMinutes,
+        breakDurationMinutes: exam.breakDurationMinutes,
         questions: exam._count.questions || exam.questionCount,
+        cpsQuestionCount: exam.cpsQuestionCount,
+        pdQuestionCount: exam.pdQuestionCount,
         category: exam.category,
         notAttempted,
         bestScore,
+        score: Math.round(scoreNum),
+        dateTaken,
         status,
         actionText,
         progress,
@@ -151,8 +173,15 @@ export class MockExamService {
    * Get mock exam details with questions
    */
   async getMockExamById(mockExamId: string) {
-    const mockExam = await this.prisma.mockExam.findUnique({
-      where: { id: mockExamId },
+    const isNum = !isNaN(Number(mockExamId));
+    const mockExam = await this.prisma.mockExam.findFirst({
+      where: {
+        OR: [
+          { id: mockExamId },
+          ...(isNum ? [{ examNumber: Number(mockExamId) }] : []),
+          { title: mockExamId.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) },
+        ],
+      },
       include: {
         questions: {
           orderBy: { order: "asc" },
@@ -171,8 +200,14 @@ export class MockExamService {
    * Start or resume an exam attempt
    */
   async startExamAttempt(userId: string, mockExamId: string) {
-    const mockExam = await this.prisma.mockExam.findUnique({
-      where: { id: mockExamId },
+    const isNum = !isNaN(Number(mockExamId));
+    const mockExam = await this.prisma.mockExam.findFirst({
+      where: {
+        OR: [
+          { id: mockExamId },
+          ...(isNum ? [{ examNumber: Number(mockExamId) }] : []),
+        ],
+      },
       include: { questions: true },
     });
 
@@ -184,7 +219,7 @@ export class MockExamService {
     const existing = await this.prisma.mockExamAttempt.findFirst({
       where: {
         userId,
-        mockExamId,
+        mockExamId: mockExam.id,
         status: "IN_PROGRESS",
       },
       orderBy: { createdAt: "desc" },
@@ -198,7 +233,7 @@ export class MockExamService {
     return await this.prisma.mockExamAttempt.create({
       data: {
         userId,
-        mockExamId,
+        mockExamId: mockExam.id,
         totalQuestions: mockExam.questions.length || mockExam.questionCount,
         status: "IN_PROGRESS",
       },
@@ -206,18 +241,18 @@ export class MockExamService {
   }
 
   /**
-   * Submit an exam attempt and calculate score
+   * Submit an exam attempt and calculate score across all question types (SBA, EMQ, SELECT_3, RANKING)
    */
   async submitExamAttempt(
     userId: string,
     attemptId: string,
-    payload: { userAnswers: Record<string, number>; timeTakenSeconds: number }
+    payload: { userAnswers: Record<string, any>; timeTakenSeconds: number }
   ) {
     const attempt = await this.prisma.mockExamAttempt.findFirst({
       where: { id: attemptId, userId },
       include: {
         mockExam: {
-          include: { questions: true },
+          include: { questions: { orderBy: { order: "asc" } } },
         },
       },
     });
@@ -227,24 +262,72 @@ export class MockExamService {
     }
 
     const questions = attempt.mockExam.questions;
-    let correctCount = 0;
+    let totalScoreable = 0;
+    let earnedPoints = 0;
 
     questions.forEach((q) => {
-      const userChoice = payload.userAnswers[q.id];
-      if (userChoice !== undefined && userChoice === q.correctAnswer) {
-        correctCount += 1;
+      const qType = q.questionType;
+      if (qType === "SBA") {
+        totalScoreable += 1;
+        const ans = payload.userAnswers[q.id];
+        if (ans !== undefined) {
+          if (
+            ans === q.correctOption ||
+            ans === q.correctAnswer ||
+            (typeof ans === "string" && q.correctOption && ans.trim().toUpperCase() === q.correctOption.trim().toUpperCase())
+          ) {
+            earnedPoints += 1;
+          }
+        }
+      } else if (qType === "EMQ") {
+        const cases = (q.cases as any[]) || [];
+        totalScoreable += cases.length || 1;
+        cases.forEach((c) => {
+          const caseAns = payload.userAnswers[`${q.id}_case_${c.caseNumber}`] || payload.userAnswers[`${q.id}_case_${c.id}`];
+          if (caseAns && c.correctOption && caseAns.trim().toUpperCase() === c.correctOption.trim().toUpperCase()) {
+            earnedPoints += 1;
+          }
+        });
+      } else if (qType === "SELECT_3") {
+        totalScoreable += 3;
+        const selected = (payload.userAnswers[q.id] as string[]) || [];
+        const correctList = (q.correctAnswers as string[]) || [];
+        selected.forEach((letter) => {
+          if (correctList.includes(letter)) {
+            earnedPoints += 1;
+          }
+        });
+      } else if (qType === "RANKING") {
+        totalScoreable += 1;
+        const userOrder = (payload.userAnswers[q.id] as string[]) || [];
+        const ideal = (q.idealOrder as string[]) || [];
+        if (ideal.length > 0 && userOrder.length === ideal.length) {
+          // Check rank correlation / exact or close match
+          let exactMatches = 0;
+          ideal.forEach((letter, idx) => {
+            if (userOrder[idx] === letter) exactMatches += 1;
+          });
+          if (exactMatches === ideal.length) {
+            earnedPoints += 1;
+          } else if (exactMatches >= 3) {
+            earnedPoints += 0.6; // partial credit
+          }
+        }
+      } else {
+        totalScoreable += 1;
+        if (payload.userAnswers[q.id] === q.correctAnswer) earnedPoints += 1;
       }
     });
 
-    const total = questions.length || 1;
-    const scorePercentage = (correctCount / total) * 100;
+    const total = totalScoreable || questions.length || 1;
+    const scorePercentage = Math.round((earnedPoints / total) * 100);
 
     const updated = await this.prisma.mockExamAttempt.update({
       where: { id: attemptId },
       data: {
         status: "COMPLETED",
         scorePercentage,
-        correctAnswers: correctCount,
+        correctAnswers: Math.round(earnedPoints),
         userAnswers: payload.userAnswers,
         timeTakenSeconds: payload.timeTakenSeconds,
         completedAt: new Date(),

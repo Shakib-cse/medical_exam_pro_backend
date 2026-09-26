@@ -250,15 +250,21 @@ model BlogPost {
 }
 
 model MockExam {
-  id              String   @id @default(uuid())
-  title           String
-  description     String?  @db.Text
-  difficultyBadge String   @default("MODERATE") // "MODERATE" | "ADVANCED" | "CLINICAL" | "STANDARD"
-  difficultyType  String   @default("moderate") // "moderate" | "advanced" | "clinical" | "standard"
-  durationMinutes Int      @default(45)
-  questionCount   Int      @default(50)
-  category        String   @default("General")
-  isActive        Boolean  @default(true)
+  id                   String   @id @default(uuid())
+  title                String
+  examNumber           Int?
+  description          String?  @db.Text
+  difficultyBadge      String   @default("MODERATE") // "MODERATE" | "ADVANCED" | "CLINICAL" | "STANDARD"
+  difficultyType       String   @default("moderate") // "moderate" | "advanced" | "clinical" | "standard"
+  durationMinutes      Int      @default(120) // Total duration: 75 + 45 = 120 mins
+  cpsDurationMinutes   Int      @default(75)  // CPS section: 75 mins
+  pdDurationMinutes    Int      @default(45)  // PD section: 45 mins
+  breakDurationMinutes Int      @default(5)   // 5 minute break between sections
+  questionCount        Int      @default(136) // Combined question count
+  cpsQuestionCount     Int      @default(86)  // CPS question count
+  pdQuestionCount      Int      @default(50)  // PD question count
+  category             String   @default("MSRA Mock")
+  isActive             Boolean  @default(true)
 
   questions MockQuestion[]
   attempts  MockExamAttempt[]
@@ -268,14 +274,26 @@ model MockExam {
 }
 
 model MockQuestion {
-  id            String   @id @default(uuid())
-  mockExamId    String
-  mockExam      MockExam @relation(fields: [mockExamId], references: [id], onDelete: Cascade)
-  questionText  String   @db.Text
-  options       Json     // e.g. ["Option A", "Option B", "Option C", "Option D"]
-  correctAnswer Int      // 0-indexed
-  explanation   String?  @db.Text
-  order         Int      @default(0)
+  id             String   @id @default(uuid())
+  mockExamId     String
+  mockExam       MockExam @relation(fields: [mockExamId], references: [id], onDelete: Cascade)
+  section        String   @default("CPS") // "CPS" | "PD"
+  questionType   String   @default("SBA") // "SBA" | "EMQ" | "RANKING" | "SELECT_3"
+  questionText   String   @db.Text
+  vignette       String?  @db.Text
+  options        Json     // e.g. ["Option A", "Option B", ...]
+  optionsDict    Json?    // e.g. { "A": "...", "B": "..." }
+  correctAnswer  Int      @default(0) // 0-indexed (for SBA)
+  correctOption  String?  // e.g. "A", "B"
+  correctAnswers Json?    // For SELECT_3: ["E", "F", "G"]
+  idealOrder     Json?    // For RANKING: ["C", "D", "E", "A", "B"]
+  explanation    String?  @db.Text
+  references     String?  @db.Text
+  themeNumber    Int?
+  themeTitle     String?
+  cases          Json?    // For EMQ: [{ id, caseNumber, vignette, question, correctOption, explanation }]
+  subTopic       String?
+  order          Int      @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
