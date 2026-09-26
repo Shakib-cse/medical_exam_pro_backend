@@ -18,32 +18,51 @@ export class MockExamService {
       },
     });
 
-    if (!userId) {
-      return mockExams.map((exam, idx) => ({
-        id: exam.id,
-        examNumber: exam.examNumber || idx + 1,
-        title: exam.title,
-        description: exam.description,
-        difficultyBadge: exam.difficultyBadge,
-        difficultyType: exam.difficultyType,
-        duration: `${exam.durationMinutes} mins`,
-        durationMinutes: exam.durationMinutes,
-        cpsDurationMinutes: exam.cpsDurationMinutes,
-        pdDurationMinutes: exam.pdDurationMinutes,
-        breakDurationMinutes: exam.breakDurationMinutes,
-        questions: exam.questionCount || 147,
-        cpsQuestionCount: exam.cpsQuestionCount || 97,
-        pdQuestionCount: exam.pdQuestionCount || 50,
-        category: exam.category,
-        notAttempted: true,
+    const sectionCounts = await this.prisma.mockQuestion.groupBy({
+      by: ["mockExamId", "section"],
+      _count: { id: true },
+    });
 
-        bestScore: null,
-        score: 0,
-        dateTaken: "Not attempted yet",
-        progress: 0,
-        status: "Not started",
-        actionText: "Start",
-      }));
+    const sectionCountMap = new Map<string, { cps: number; pd: number }>();
+    for (const sc of sectionCounts) {
+      const current = sectionCountMap.get(sc.mockExamId) || { cps: 0, pd: 0 };
+      if (sc.section === "CPS") {
+        current.cps = sc._count.id;
+      } else if (sc.section === "PD") {
+        current.pd = sc._count.id;
+      }
+      sectionCountMap.set(sc.mockExamId, current);
+    }
+
+    if (!userId) {
+      return mockExams.map((exam, idx) => {
+        const counts = sectionCountMap.get(exam.id) || { cps: 0, pd: 0 };
+        return {
+          id: exam.id,
+          examNumber: exam.examNumber || idx + 1,
+          title: exam.title,
+          description: exam.description,
+          difficultyBadge: exam.difficultyBadge,
+          difficultyType: exam.difficultyType,
+          duration: `${exam.durationMinutes} mins`,
+          durationMinutes: exam.durationMinutes,
+          cpsDurationMinutes: exam.cpsDurationMinutes,
+          pdDurationMinutes: exam.pdDurationMinutes,
+          breakDurationMinutes: exam.breakDurationMinutes,
+          questions: exam._count.questions,
+          cpsQuestionCount: counts.cps,
+          pdQuestionCount: counts.pd,
+          category: exam.category,
+          notAttempted: true,
+
+          bestScore: null,
+          score: 0,
+          dateTaken: "Not attempted yet",
+          progress: 0,
+          status: "Not started",
+          actionText: "Start",
+        };
+      });
     }
 
     // Fetch user attempts
@@ -53,6 +72,7 @@ export class MockExamService {
     });
 
     return mockExams.map((exam, idx) => {
+      const counts = sectionCountMap.get(exam.id) || { cps: 0, pd: 0 };
       const examAttempts = attempts.filter((a) => a.mockExamId === exam.id);
       const completedAttempts = examAttempts.filter((a) => a.status === "COMPLETED");
 
@@ -86,7 +106,7 @@ export class MockExamService {
           status = "In progress";
           actionText = "Resume";
           const answeredCount = Object.keys((latestAttempt.userAnswers as object) || {}).length;
-          const totalQ = exam._count.questions || exam.questionCount || 1;
+          const totalQ = exam._count.questions || 1;
           progress = Math.min(100, Math.round((answeredCount / totalQ) * 100));
         }
       }
@@ -103,9 +123,9 @@ export class MockExamService {
         cpsDurationMinutes: exam.cpsDurationMinutes,
         pdDurationMinutes: exam.pdDurationMinutes,
         breakDurationMinutes: exam.breakDurationMinutes,
-        questions: exam.questionCount || 147,
-        cpsQuestionCount: exam.cpsQuestionCount || 97,
-        pdQuestionCount: exam.pdQuestionCount || 50,
+        questions: exam._count.questions,
+        cpsQuestionCount: counts.cps,
+        pdQuestionCount: counts.pd,
         category: exam.category,
         notAttempted,
 
