@@ -103,6 +103,12 @@ export class AuthService {
 
   private sanitizeUser(user: any) {
     const { password, ...sanitized } = user;
+    const now = new Date();
+    const activeSub = user.subscriptions?.find(
+      (s: any) => s.status === "ACTIVE" && (!s.currentPeriodEnd || new Date(s.currentPeriodEnd) > now)
+    );
+    sanitized.isSubscribed = Boolean(activeSub);
+    sanitized.activeSubscription = activeSub || null;
     return sanitized;
   }
 
@@ -339,7 +345,7 @@ export class AuthService {
     const user = await this.executeWithRetry(async () => {
       return this.prisma.user.findFirst({
         where: { email },
-        include: { role: true },
+        include: { role: true, subscriptions: true },
       });
     });
 
@@ -522,7 +528,7 @@ export class AuthService {
     const user = await this.executeWithRetry(async () => {
       return this.prisma.user.findFirst({
         where: { id: userId },
-        include: { role: true },
+        include: { role: true, subscriptions: true },
       });
     });
 

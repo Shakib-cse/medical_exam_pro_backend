@@ -103,6 +103,7 @@ model User {
   matchAlerts     MatchAlert[]
   mockAttempts    MockExamAttempt[]
   bankAttempts    BankAttempt[]
+  couponRedemptions CouponRedemption[]
 
   isDeleted   Boolean   @default(false)
   lastLoginAt DateTime?
@@ -204,15 +205,23 @@ model Subscription {
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  planType SubscriptionPlan   @default(INVESTOR_FREE)
-  status   SubscriptionStatus @default(TRIALING)
+  planId               String             @default("FREE")
+  planName             String             @default("Free Plan")
+  planType             String             @default("FREE")
+  status               SubscriptionStatus @default(TRIALING)
+  amount               Decimal            @default(0.00) @db.Decimal(10, 2)
+  currency             String             @default("GBP")
+  durationMonths       Int                @default(1)
+  isOneOff             Boolean            @default(true)
 
-  stripeCustomerId     String?   @unique
-  stripeSubscriptionId String?   @unique
+  stripeCustomerId     String?            @unique
+  stripeSubscriptionId String?            @unique
+  stripeSessionId      String?
+  stripePaymentIntentId String?
   currentPeriodEnd     DateTime?
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @default(now()) @updatedAt
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @default(now()) @updatedAt
 }
 
 model SavedCalculation {
@@ -329,6 +338,7 @@ model QuestionBank {
   durationMinutes Int      @default(15)
   questionCount   Int      @default(0)
   isActive        Boolean  @default(true)
+  isFree          Boolean  @default(false)
 
   questions BankQuestion[]
   attempts  BankAttempt[]
@@ -350,6 +360,7 @@ model BankQuestion {
   questionType   String       @default("SBA") // "SBA" | "EMQ"
   themeNumber    Int?
   cases          Json?        // For EMQ cases: [{ id, caseNumber, vignette, question, correctOption, explanation }]
+  isFree         Boolean      @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
@@ -382,4 +393,40 @@ model DashboardContent {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
+}
+
+model Coupon {
+  id                 String             @id @default(uuid())
+  code               String             @unique // e.g. "WELCOME20", "SPECIAL50"
+  description        String?            @db.Text
+  discountType       String             @default("PERCENTAGE") // "PERCENTAGE" | "FIXED"
+  discountValue      Decimal            @default(0.00) @db.Decimal(10, 2)
+  minPurchaseAmount  Decimal?           @db.Decimal(10, 2)
+  maxUses            Int?               // null = unlimited total uses
+  usedCount          Int                @default(0)
+  perUserLimit       Int                @default(1)
+  applicablePlans    Json?              // e.g. ["msra_1m", "msra_3m", "msra_6m"] or null for all
+  isForSpecificUsers Boolean            @default(false)
+  allowedUserEmails  Json?              // e.g. ["user@example.com"]
+  allowedUserIds     Json?              // e.g. ["uuid-1"]
+  isActive           Boolean            @default(true)
+  expiresAt          DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @default(now()) @updatedAt
+
+  redemptions        CouponRedemption[]
+}
+
+model CouponRedemption {
+  id              String   @id @default(uuid())
+  couponId        String
+  coupon          Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId          String   // e.g. "msra_3m"
+  originalPrice   Decimal  @db.Decimal(10, 2)
+  discountAmount  Decimal  @db.Decimal(10, 2)
+  finalPrice      Decimal  @db.Decimal(10, 2)
+  stripeSessionId String?
+  createdAt       DateTime @default(now())
 }

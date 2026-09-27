@@ -9,9 +9,17 @@ export class QuestionBankService {
   private specialtySummaryCache = new Map<string, CacheEntry<any>>();
   private specialtyFullCache = new Map<string, CacheEntry<any>>();
   private allBanksCache: CacheEntry<any> | null = null;
+  private freeSampleCache: CacheEntry<any> | null = null;
   private readonly CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
-  constructor(private prisma: PrismaClient) { }
+  constructor(private prisma: PrismaClient) {
+    // Warm up free sample cache in background so initial user clicks are instant
+    setTimeout(() => {
+      this.getFreeSampleBanks().catch((err) => {
+        console.warn("Background warmup of freeSampleCache:", err?.message || err);
+      });
+    }, 200);
+  }
 
   /**
    * Invalidate in-memory caches when question banks or attempts change
@@ -30,6 +38,7 @@ export class QuestionBankService {
     } else {
       this.specialtySummaryCache.clear();
       this.specialtyFullCache.clear();
+      this.freeSampleCache = null;
     }
     this.allBanksCache = null;
   }
@@ -189,13 +198,104 @@ export class QuestionBankService {
   }
 
   /**
+   * Get all question banks that contain free sample questions
+   */
+  async getFreeSampleBanks() {
+    if (this.freeSampleCache && Date.now() - this.freeSampleCache.cachedAt < this.CACHE_TTL_MS) {
+      return this.freeSampleCache.data;
+    }
+
+    try {
+      // 1. Fetch free sample questions directly (avoids slow correlated subquery across 11,000+ rows)
+      const freeQuestions = await this.prisma.bankQuestion.findMany({
+        where: { isFree: true },
+        orderBy: { order: "asc" },
+      });
+
+      const bankIds = Array.from(new Set(freeQuestions.map((q) => q.questionBankId))).filter(Boolean) as string[];
+
+      const rawBanks = await this.prisma.questionBank.findMany({
+        where: { id: { in: bankIds } },
+        orderBy: { title: "asc" },
+      });
+
+      const questionsByBankId = new Map<string, any[]>();
+      for (const q of freeQuestions) {
+        if (!q.questionBankId) continue;
+        if (!questionsByBankId.has(q.questionBankId)) {
+          questionsByBankId.set(q.questionBankId, []);
+        }
+        const casesData = q.cases as any;
+        questionsByBankId.get(q.questionBankId)!.push({
+          ...q,
+          idealOrder: casesData?.idealOrder || undefined,
+          correctAnswers: casesData?.correctAnswers || undefined,
+          peerStats: casesData?.peerStats || undefined,
+          totalAttempts: typeof casesData?.totalAttempts === "number" ? casesData.totalAttempts : 0,
+          selectionCounts: casesData?.selectionCounts || {},
+          instruction: casesData?.instruction || undefined,
+          references: casesData?.references || undefined,
+        });
+      }
+
+      const result = rawBanks.map((bank) => {
+        const questions = questionsByBankId.get(bank.id) || [];
+        const counts = this.computeQuestionCounts(questions, questions.length);
+        const subTopics = Array.from(
+          new Set(
+            questions
+              .map((q) => q.subTopic)
+              .filter((st): st is string => Boolean(st && st.trim()))
+          )
+        ).sort();
+
+        return {
+          ...bank,
+          ...counts,
+          questionCount: counts.questionCount,
+          totalQuestions: counts.questionCount,
+          questions,
+          subTopics,
+        };
+      });
+
+      this.freeSampleCache = {
+        data: result,
+        cachedAt: Date.now(),
+      };
+
+      return result;
+    } catch (error) {
+      console.error("Failed to query free sample banks from DB:", error);
+      if (this.freeSampleCache) {
+        return this.freeSampleCache.data;
+      }
+      throw error;
+    }
+  }
+
+  /**
    * Get single question bank by ID
    */
-  async getQuestionBankById(id: string) {
+  async getQuestionBankById(id: string, freeOnly: boolean = false) {
+    if (freeOnly) {
+      const freeBanks = await this.getFreeSampleBanks();
+      const matched = freeBanks.find(
+        (b: any) =>
+          b.id === id ||
+          b.title?.toLowerCase().trim() === id.toLowerCase().trim() ||
+          b.specialty?.toLowerCase().trim() === id.toLowerCase().trim()
+      );
+      if (matched) {
+        return matched;
+      }
+    }
+
     const bank = await this.prisma.questionBank.findUnique({
       where: { id },
       include: {
         questions: {
+          where: freeOnly ? { isFree: true } : undefined,
           orderBy: { order: "asc" },
         },
       },
@@ -205,7 +305,7 @@ export class QuestionBankService {
       throw new Error("Question Bank module not found");
     }
 
-    const counts = this.computeQuestionCounts(bank.questions, bank.questionCount || 0);
+    const counts = this.computeQuestionCounts(bank.questions, freeOnly ? bank.questions.length : bank.questionCount || 0);
 
     const subTopics = Array.from(
       new Set(
@@ -241,7 +341,7 @@ export class QuestionBankService {
    * Get question bank by specialty title or slug with distinct subtopics.
    * When summaryOnly is true, skips all heavy question texts/explanations/cases for instant load.
    */
-  async getQuestionBankBySpecialty(specialtyOrSlug: string, summaryOnly: boolean = false) {
+  async getQuestionBankBySpecialty(specialtyOrSlug: string, summaryOnly: boolean = false, freeOnly: boolean = false) {
     const slugMap: Record<string, string> = {
       cardiovascular: "Cardiovascular Medicine",
       dermatology: "Dermatology",
@@ -273,8 +373,34 @@ export class QuestionBankService {
     const targetSpecialty = slugMap[normSlug] || specialtyOrSlug;
     const targetLower = targetSpecialty.toLowerCase().trim();
 
-    // 1. Check in-memory caches
-    if (summaryOnly) {
+    if (freeOnly) {
+      const freeBanks = await this.getFreeSampleBanks();
+      const matched = freeBanks.find((b: any) => {
+        const spec = (b.specialty || "").toLowerCase().trim();
+        const title = (b.title || "").toLowerCase().trim();
+        return (
+          spec === normSlug ||
+          title === normSlug ||
+          spec === targetLower ||
+          title === targetLower ||
+          spec.includes(normSlug) ||
+          title.includes(normSlug) ||
+          normSlug.includes(spec) ||
+          normSlug.includes(title)
+        );
+      });
+      if (matched) {
+        if (summaryOnly) {
+          const { questions, ...rest } = matched;
+          return rest;
+        }
+        return matched;
+      }
+    }
+
+    // 1. Check in-memory caches (only if not querying free-only)
+    if (!freeOnly) {
+      if (summaryOnly) {
       const cachedSummary =
         this.specialtySummaryCache.get(normSlug) ||
         this.specialtySummaryCache.get(targetLower);
@@ -302,139 +428,10 @@ export class QuestionBankService {
         return cachedFull.data;
       }
     }
+  }
 
-    // 2. Query from database
-    if (summaryOnly) {
-      const bank = await this.prisma.questionBank.findFirst({
-        where: {
-          OR: [
-            { specialty: targetSpecialty },
-            { title: targetSpecialty },
-            { specialty: { contains: specialtyOrSlug } },
-            { title: { contains: specialtyOrSlug } },
-          ],
-        },
-        select: {
-          id: true,
-          title: true,
-          description: true,
-          specialty: true,
-          category: true,
-          type: true,
-          difficultyBadge: true,
-          difficultyType: true,
-          durationMinutes: true,
-          questionCount: true,
-          isActive: true,
-          createdAt: true,
-          updatedAt: true,
-          questions: {
-            select: {
-              id: true,
-              subTopic: true,
-              questionType: true,
-              cases: true,
-            },
-            orderBy: { order: "asc" },
-          },
-          attempts: {
-            select: {
-              totalQuestions: true,
-              correctAnswers: true,
-              timeTakenSeconds: true,
-              createdAt: true,
-            },
-            orderBy: { createdAt: "desc" },
-          },
-        },
-      });
-
-      if (!bank) {
-        throw new Error(`Question bank not found for specialty: ${specialtyOrSlug}`);
-      }
-
-      const subTopics = Array.from(
-        new Set(
-          (bank.questions || [])
-            .map((q) => q.subTopic)
-            .filter((st): st is string => Boolean(st && st.trim()))
-        )
-      ).sort();
-
-      const attempts = bank.attempts || [];
-      let dbAttempted = 0;
-      let dbCorrect = 0;
-      let dbTotalTime = 0;
-      for (const a of attempts) {
-        dbAttempted += a.totalQuestions || 0;
-        dbCorrect += a.correctAnswers || 0;
-        dbTotalTime += a.timeTakenSeconds || 0;
-      }
-      const dbAccuracy = dbAttempted > 0 ? Math.round((dbCorrect / dbAttempted) * 100) : 0;
-      const dbAvgSec = dbAttempted > 0 ? Math.round(dbTotalTime / dbAttempted) : 0;
-
-      const subTopicCounts: Record<string, { total: number; ranking: number; select3: number; sba: number; emq: number }> = {};
-      for (const q of bank.questions || []) {
-        if (!q.subTopic) continue;
-        const st = q.subTopic.trim();
-        if (!subTopicCounts[st]) {
-          subTopicCounts[st] = { total: 0, ranking: 0, select3: 0, sba: 0, emq: 0 };
-        }
-        if (q.questionType === "RANKING") {
-          subTopicCounts[st].ranking++;
-          subTopicCounts[st].total++;
-        } else if (q.questionType === "SELECT_3") {
-          subTopicCounts[st].select3++;
-          subTopicCounts[st].total++;
-        } else if (q.questionType === "EMQ") {
-          const cCount = Array.isArray(q.cases) ? q.cases.length : 1;
-          subTopicCounts[st].emq += cCount;
-          subTopicCounts[st].total += cCount;
-        } else {
-          subTopicCounts[st].sba++;
-          subTopicCounts[st].total++;
-        }
-      }
-
-      const counts = this.computeQuestionCounts(bank.questions, bank.questionCount || 0);
-
-      const summaryResult = {
-        id: bank.id,
-        title: bank.title,
-        description: bank.description,
-        specialty: bank.specialty,
-        category: bank.category,
-        type: bank.type,
-        difficultyBadge: bank.difficultyBadge,
-        difficultyType: bank.difficultyType,
-        durationMinutes: bank.durationMinutes,
-        questionCount: counts.questionCount,
-        totalQuestions: counts.questionCount,
-        sbaCount: counts.sbaCount,
-        emqCount: counts.emqCount,
-        emqThemesCount: counts.emqThemesCount,
-        rankingCount: counts.rankingCount,
-        select3Count: counts.select3Count,
-        subTopics,
-        subTopicCounts,
-        stats: {
-          attempted: dbAttempted,
-          correct: dbCorrect,
-          accuracy: dbAccuracy,
-          averageTimeSeconds: dbAvgSec,
-        },
-        createdAt: bank.createdAt,
-        updatedAt: bank.updatedAt,
-      };
-
-      const now = Date.now();
-      this.specialtySummaryCache.set(normSlug, { data: summaryResult, cachedAt: now });
-      this.specialtySummaryCache.set(targetLower, { data: summaryResult, cachedAt: now });
-
-      return summaryResult;
-    }
-
-    // Full query including questions
+  // 2. Query from database
+  if (summaryOnly) {
     const bank = await this.prisma.questionBank.findFirst({
       where: {
         OR: [
@@ -444,15 +441,149 @@ export class QuestionBankService {
           { title: { contains: specialtyOrSlug } },
         ],
       },
-      include: {
+      select: {
+        id: true,
+        title: true,
+        description: true,
+        specialty: true,
+        category: true,
+        type: true,
+        difficultyBadge: true,
+        difficultyType: true,
+        durationMinutes: true,
+        questionCount: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
         questions: {
+          where: freeOnly ? { isFree: true } : undefined,
+          select: {
+            id: true,
+            subTopic: true,
+            questionType: true,
+            cases: true,
+          },
           orderBy: { order: "asc" },
         },
         attempts: {
+          select: {
+            totalQuestions: true,
+            correctAnswers: true,
+            timeTakenSeconds: true,
+            createdAt: true,
+          },
           orderBy: { createdAt: "desc" },
         },
       },
     });
+
+    if (!bank) {
+      throw new Error(`Question bank not found for specialty: ${specialtyOrSlug}`);
+    }
+
+    const subTopics = Array.from(
+      new Set(
+        (bank.questions || [])
+          .map((q) => q.subTopic)
+          .filter((st): st is string => Boolean(st && st.trim()))
+      )
+    ).sort();
+
+    const attempts = bank.attempts || [];
+    let dbAttempted = 0;
+    let dbCorrect = 0;
+    let dbTotalTime = 0;
+    for (const a of attempts) {
+      dbAttempted += a.totalQuestions || 0;
+      dbCorrect += a.correctAnswers || 0;
+      dbTotalTime += a.timeTakenSeconds || 0;
+    }
+    const dbAccuracy = dbAttempted > 0 ? Math.round((dbCorrect / dbAttempted) * 100) : 0;
+    const dbAvgSec = dbAttempted > 0 ? Math.round(dbTotalTime / dbAttempted) : 0;
+
+    const subTopicCounts: Record<string, { total: number; ranking: number; select3: number; sba: number; emq: number }> = {};
+    for (const q of bank.questions || []) {
+      if (!q.subTopic) continue;
+      const st = q.subTopic.trim();
+      if (!subTopicCounts[st]) {
+        subTopicCounts[st] = { total: 0, ranking: 0, select3: 0, sba: 0, emq: 0 };
+      }
+      if (q.questionType === "RANKING") {
+        subTopicCounts[st].ranking++;
+        subTopicCounts[st].total++;
+      } else if (q.questionType === "SELECT_3") {
+        subTopicCounts[st].select3++;
+        subTopicCounts[st].total++;
+      } else if (q.questionType === "EMQ") {
+        const cCount = Array.isArray(q.cases) ? q.cases.length : 1;
+        subTopicCounts[st].emq += cCount;
+        subTopicCounts[st].total += cCount;
+      } else {
+        subTopicCounts[st].sba++;
+        subTopicCounts[st].total++;
+      }
+    }
+
+    const counts = this.computeQuestionCounts(bank.questions, freeOnly ? bank.questions.length : bank.questionCount || 0);
+
+    const summaryResult = {
+      id: bank.id,
+      title: bank.title,
+      description: bank.description,
+      specialty: bank.specialty,
+      category: bank.category,
+      type: bank.type,
+      difficultyBadge: bank.difficultyBadge,
+      difficultyType: bank.difficultyType,
+      durationMinutes: bank.durationMinutes,
+      questionCount: counts.questionCount,
+      totalQuestions: counts.questionCount,
+      sbaCount: counts.sbaCount,
+      emqCount: counts.emqCount,
+      emqThemesCount: counts.emqThemesCount,
+      rankingCount: counts.rankingCount,
+      select3Count: counts.select3Count,
+      subTopics,
+      subTopicCounts,
+      stats: {
+        attempted: dbAttempted,
+        correct: dbCorrect,
+        accuracy: dbAccuracy,
+        averageTimeSeconds: dbAvgSec,
+      },
+      createdAt: bank.createdAt,
+      updatedAt: bank.updatedAt,
+    };
+
+    if (!freeOnly) {
+      const now = Date.now();
+      this.specialtySummaryCache.set(normSlug, { data: summaryResult, cachedAt: now });
+      this.specialtySummaryCache.set(targetLower, { data: summaryResult, cachedAt: now });
+    }
+
+    return summaryResult;
+  }
+
+  // Full query including questions
+  const bank = await this.prisma.questionBank.findFirst({
+    where: {
+      OR: [
+        { specialty: targetSpecialty },
+        { title: targetSpecialty },
+        { specialty: { contains: specialtyOrSlug } },
+        { title: { contains: specialtyOrSlug } },
+      ],
+    },
+    include: {
+      questions: {
+        where: freeOnly ? { isFree: true } : undefined,
+        orderBy: { order: "asc" },
+      },
+      attempts: {
+        orderBy: { createdAt: "desc" },
+      },
+    },
+  });
 
     if (!bank) {
       throw new Error(`Question bank not found for specialty: ${specialtyOrSlug}`);

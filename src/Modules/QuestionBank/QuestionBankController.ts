@@ -26,10 +26,27 @@ export class QuestionBankController {
     }
   };
 
+  public getFreeSampleBanks = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const data = await this.service.getFreeSampleBanks();
+      res.status(200).json({
+        success: true,
+        data,
+      });
+    } catch (error: any) {
+      AppLogger.error("Failed to fetch free sample question banks:", { error });
+      res.status(500).json({
+        success: false,
+        message: error.message || "Failed to fetch free sample question banks",
+      });
+    }
+  };
+
   public getQuestionBankById = async (req: Request, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
-      const data = await this.service.getQuestionBankById(id as string);
+      const freeOnly = req.query.free === "true" || req.query.freeOnly === "true";
+      const data = await this.service.getQuestionBankById(id as string, freeOnly);
       res.status(200).json({
         success: true,
         data,
@@ -47,7 +64,8 @@ export class QuestionBankController {
     try {
       const { specialty } = req.params;
       const summaryOnly = req.query.summary === "true" || req.query.summary === "1";
-      const data = await this.service.getQuestionBankBySpecialty(specialty as string, summaryOnly);
+      const freeOnly = req.query.free === "true" || req.query.freeOnly === "true";
+      const data = await this.service.getQuestionBankBySpecialty(specialty as string, summaryOnly, freeOnly);
       res.status(200).json({
         success: true,
         data,
