@@ -327,7 +327,7 @@ export class SubscriptionService {
               originalPrice: plan.priceGBP,
               discountAmount: Math.round(discountAmount * 100) / 100,
               finalPrice: Math.round(finalAmount * 100) / 100,
-              stripeSessionId: options.stripeSessionId || null,
+              stripeSessionId: options.stripeSessionId || undefined,
             });
 
             AppLogger.info(

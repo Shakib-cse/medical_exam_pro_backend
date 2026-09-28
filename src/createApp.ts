@@ -10,6 +10,7 @@ import { OverviewModule } from "./Modules/Overview/OverviewModule";
 import { UploadModule } from "./Modules/Upload/UploadModule";
 import { SubscriptionModule } from "./Modules/Subscription/SubscriptionModule";
 import { CouponModule } from "./Modules/Coupon/CouponModule";
+import { PreRegistrationModule } from "./Modules/PreRegistration/PreRegistrationModule";
 import { Express } from "express";
 
 let appInstance: Express | null = null;
@@ -36,6 +37,7 @@ export async function createExpressApp(): Promise<Express> {
       app.registerModule(new UploadModule());
       app.registerModule(new SubscriptionModule());
       app.registerModule(new CouponModule());
+      app.registerModule(new PreRegistrationModule());
 
       const expressApp = await app.initialize();
       appInstance = expressApp;

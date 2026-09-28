@@ -344,12 +344,12 @@ export class AuthService {
     const email = dto.email.toLowerCase().trim();
     const user = await this.executeWithRetry(async () => {
       return this.prisma.user.findFirst({
-        where: { email },
+        where: { email, isDeleted: false },
         include: { role: true, subscriptions: true },
       });
     });
 
-    if (!user) {
+    if (!user || user.isDeleted) {
       throw new AuthenticationError("Invalid email or password");
     }
 
@@ -358,8 +358,8 @@ export class AuthService {
       throw new AuthenticationError("Invalid email or password");
     }
 
-    if (user.status === AccountStatus.suspended) {
-      throw new AuthenticationError("Your account has been suspended. Please contact support.");
+    if (user.status === AccountStatus.suspended || user.status === AccountStatus.inactive) {
+      throw new AuthenticationError("Your account has been deactivated or suspended. Please contact support.");
     }
 
     if (user.status === AccountStatus.pending_verification || !user.emailVerifiedAt) {
@@ -590,10 +590,75 @@ export class AuthService {
     }
 
     await this.executeWithRetry(async () => {
-      return this.prisma.user.update({
-        where: { id: userId },
-        data: { isDeleted: true, deletedAt: new Date() },
-      });
+      // 1. If this user has a pre-registration entry, remove it and shift queue
+      try {
+        const preReg = await this.prisma.preRegistration.findFirst({
+          where: {
+            OR: [
+              { userId },
+              { email: user.email },
+            ],
+          },
+        });
+
+        if (preReg) {
+          const deletedQueueNumber = preReg.queueNumber;
+          const wasVerified = preReg.isVerified;
+
+          await this.prisma.preRegistration.delete({
+            where: { id: preReg.id },
+          });
+
+          if (wasVerified && deletedQueueNumber) {
+            const subsequentUsers = await this.prisma.preRegistration.findMany({
+              where: {
+                isVerified: true,
+                queueNumber: { gt: deletedQueueNumber },
+              },
+              orderBy: { queueNumber: "asc" },
+            });
+
+            for (const candidate of subsequentUsers) {
+              if (candidate.queueNumber) {
+                const newQueueNumber = candidate.queueNumber - 1;
+                const isEligible = newQueueNumber <= 100;
+
+                await this.prisma.preRegistration.update({
+                  where: { id: candidate.id },
+                  data: {
+                    queueNumber: newQueueNumber,
+                    isEligibleForDiscount: isEligible,
+                  },
+                });
+
+                if (candidate.userId) {
+                  await this.prisma.user.update({
+                    where: { id: candidate.userId },
+                    data: {
+                      preRegQueueNumber: newQueueNumber,
+                      preRegDiscountEligible: isEligible,
+                    },
+                  }).catch(() => {});
+                }
+              }
+            }
+          }
+        }
+      } catch (err) {
+        AppLogger.warn(`Failed to clean up preRegistration for user ${userId}:`, { error: err });
+      }
+
+      // 2. Hard delete the user from database
+      try {
+        await this.prisma.user.delete({
+          where: { id: userId },
+        });
+      } catch {
+        await this.prisma.user.update({
+          where: { id: userId },
+          data: { isDeleted: true, deletedAt: new Date(), status: AccountStatus.inactive },
+        });
+      }
     });
 
     return { message: "User deleted successfully" };

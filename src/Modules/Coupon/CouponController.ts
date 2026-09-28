@@ -59,7 +59,7 @@ export class CouponController {
    */
   public getCouponById = async (req: Request, res: Response): Promise<void> => {
     try {
-      const { id } = req.params;
+      const id = req.params.id as string;
       const coupon = await this.service.getCouponById(id);
       res.status(200).json({
         success: true,
@@ -101,7 +101,7 @@ export class CouponController {
    */
   public updateCoupon = async (req: Request, res: Response): Promise<void> => {
     try {
-      const { id } = req.params;
+      const id = req.params.id as string;
       const updated = await this.service.updateCoupon(id, req.body);
       res.status(200).json({
         success: true,
@@ -123,7 +123,7 @@ export class CouponController {
    */
   public deleteCoupon = async (req: Request, res: Response): Promise<void> => {
     try {
-      const { id } = req.params;
+      const id = req.params.id as string;
       await this.service.deleteCoupon(id);
       res.status(200).json({
         success: true,
