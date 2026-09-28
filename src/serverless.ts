@@ -1,5 +1,5 @@
-// api/index.ts (Vercel Serverless Function Entrypoint)
-import { createExpressApp } from "../src/createApp";
+// src/serverless.ts (Vercel Serverless Function Entrypoint)
+import { createExpressApp } from "./createApp";
 import type { Request, Response } from "express";
 
 let app: any = null;
@@ -30,5 +30,3 @@ export default async function handler(req: Request, res: Response) {
     }
   }
 }
-
-

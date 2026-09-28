@@ -12,8 +12,13 @@ export function requestLogger() {
     req.id = requestId;
 
     // Safely extract IP
-    const xff = req.headers["x-forwarded-for"];
-    const ip = Array.isArray(xff) ? xff[0] : xff || req.ip;
+    let ip = "unknown";
+    try {
+      const xff = req.headers?.["x-forwarded-for"];
+      ip = Array.isArray(xff) ? xff[0] : (xff as string) || req.ip || "unknown";
+    } catch {
+      ip = "unknown";
+    }
 
     const method = req.method;
     const path = req.originalUrl || req.url;

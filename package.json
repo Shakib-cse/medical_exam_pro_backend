@@ -5,7 +5,7 @@
     "type": "module",
     "scripts": {
         "dev": "NODE_ENV=development bun run --watch src/index.ts",
-        "build": "prisma generate && bunx esbuild api/index.ts --bundle --platform=node --target=node20 --format=cjs --outfile=api/index.cjs --external:bcrypt --external:ws",
+        "build": "prisma generate && esbuild src/serverless.ts --bundle --platform=node --target=node20 --format=cjs --outfile=api/index.cjs --external:bcrypt --external:ws",
         "start": "NODE_ENV=production node api/index.cjs",
         "type-check": "tsc --noEmit",
         "lint": "eslint src --ext .ts",

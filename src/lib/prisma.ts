@@ -10,6 +10,10 @@ const globalForPrisma = globalThis as unknown as {
 
 function createMariaDbAdapter(): PrismaMariaDb {
   const connectionUrl = process.env.DATABASE_URL || "";
+  const isServerless = process.env.VERCEL === "1" || !!process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME !== undefined;
+  const defaultLimit = isServerless ? 3 : 10;
+  const connectionLimit = Number(process.env.DB_CONNECTION_LIMIT) || defaultLimit;
+
   try {
     const url = new URL(connectionUrl);
     return new PrismaMariaDb({
@@ -18,8 +22,8 @@ function createMariaDbAdapter(): PrismaMariaDb {
       user: decodeURIComponent(url.username),
       password: decodeURIComponent(url.password),
       database: url.pathname.replace(/^\//, ""),
-      connectionLimit: 10,
-      idleTimeout: 60,
+      connectionLimit,
+      idleTimeout: 30,
       minDelayValidation: 500,
       connectTimeout: 20000,
       acquireTimeout: 20000,
@@ -29,11 +33,13 @@ function createMariaDbAdapter(): PrismaMariaDb {
   }
 }
 
-const adapter = createMariaDbAdapter();
+function getPrismaClient(): PrismaClient {
+  if (globalForPrisma.prisma_v3) {
+    return globalForPrisma.prisma_v3;
+  }
 
-export const prisma =
-  globalForPrisma.prisma_v3 ||
-  new PrismaClient({
+  const adapter = createMariaDbAdapter();
+  const client = new PrismaClient({
     adapter,
     log:
       process.env.DB_LOGGING === "true"
@@ -41,6 +47,8 @@ export const prisma =
         : ["error"],
   });
 
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma_v3 = prisma;
+  globalForPrisma.prisma_v3 = client;
+  return client;
 }
+
+export const prisma = getPrismaClient();

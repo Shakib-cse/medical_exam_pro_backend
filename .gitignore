@@ -53,3 +53,5 @@ Thumbs.db
 data/
 *.zip
 *.docx
+.vercel
+.env*

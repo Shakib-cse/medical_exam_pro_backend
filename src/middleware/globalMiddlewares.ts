@@ -27,10 +27,20 @@ export function setupGlobalMiddlewares(app: Express) {
   app.use(
     cors({
       origin: (origin, callback) => {
+        let isVercelDomain = false;
+        try {
+          if (origin) {
+            const parsed = new URL(origin);
+            isVercelDomain = parsed.hostname.endsWith(".vercel.app");
+          }
+        } catch {}
+
         if (
           !origin ||
           !config.server.isProduction ||
+          allowedOriginsList.includes("*") ||
           allowedOriginsList.includes(origin) ||
+          isVercelDomain ||
           /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin)
         ) {
           callback(null, true);
