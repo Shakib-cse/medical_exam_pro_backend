@@ -11,7 +11,7 @@ const globalForPrisma = globalThis as unknown as {
 function createMariaDbAdapter(): PrismaMariaDb {
   const connectionUrl = process.env.DATABASE_URL || "";
   const isServerless = process.env.VERCEL === "1" || !!process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME !== undefined;
-  const defaultLimit = isServerless ? 3 : 10;
+  const defaultLimit = isServerless ? 2 : 10;
   const connectionLimit = Number(process.env.DB_CONNECTION_LIMIT) || defaultLimit;
 
   try {
@@ -23,10 +23,10 @@ function createMariaDbAdapter(): PrismaMariaDb {
       password: decodeURIComponent(url.password),
       database: url.pathname.replace(/^\//, ""),
       connectionLimit,
-      idleTimeout: 30,
-      minDelayValidation: 500,
-      connectTimeout: 20000,
-      acquireTimeout: 20000,
+      idleTimeout: isServerless ? 15 : 60,
+      minDelayValidation: 0,
+      connectTimeout: 7000,
+      acquireTimeout: 7000,
     });
   } catch {
     return new PrismaMariaDb(connectionUrl);

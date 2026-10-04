@@ -6,7 +6,9 @@
     "scripts": {
         "dev": "NODE_ENV=development bun run --watch src/index.ts",
         "build": "prisma generate && esbuild src/serverless.ts --bundle --platform=node --target=node20 --format=cjs --outfile=api/index.cjs --external:bcrypt --external:ws",
+        "build:server": "prisma generate && esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/index.cjs --external:bcrypt --external:ws",
         "start": "NODE_ENV=production node api/index.cjs",
+        "start:server": "NODE_ENV=production node app.js",
         "type-check": "tsc --noEmit",
         "lint": "eslint src --ext .ts",
         "lint:fix": "eslint src --ext .ts --fix",

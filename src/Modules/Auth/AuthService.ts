@@ -104,13 +104,29 @@ export class AuthService {
   private sanitizeUser(user: any) {
     const { password, ...sanitized } = user;
     const now = new Date();
-    const activeSub = user.subscriptions?.find(
-      (s: any) => s.status === "ACTIVE" && (!s.currentPeriodEnd || new Date(s.currentPeriodEnd) > now)
+    const sortedSubs = user.subscriptions && Array.isArray(user.subscriptions)
+      ? [...user.subscriptions].sort(
+          (a: any, b: any) =>
+            new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
+        )
+      : [];
+    const activeSub = sortedSubs.find(
+      (s: any) =>
+        s.status === "ACTIVE" &&
+        (!s.currentPeriodEnd || new Date(s.currentPeriodEnd) > now)
     );
     sanitized.isSubscribed = Boolean(activeSub);
     sanitized.activeSubscription = activeSub || null;
+    if (activeSub) {
+      sanitized.planType = activeSub.planType;
+      sanitized.planId = activeSub.planId;
+      sanitized.planName = activeSub.planName;
+    } else {
+      sanitized.planType = "FREE";
+    }
     return sanitized;
   }
+
 
   private generateToken(user: { id: string; email: string; role: { name: string } }): string {
     const secret = config.security.jwt.secret || "default-secret";
@@ -345,7 +361,12 @@ export class AuthService {
     const user = await this.executeWithRetry(async () => {
       return this.prisma.user.findFirst({
         where: { email, isDeleted: false },
-        include: { role: true, subscriptions: true },
+        include: {
+          role: true,
+          subscriptions: {
+            orderBy: { createdAt: "desc" },
+          },
+        },
       });
     });
 
@@ -528,7 +549,12 @@ export class AuthService {
     const user = await this.executeWithRetry(async () => {
       return this.prisma.user.findFirst({
         where: { id: userId },
-        include: { role: true, subscriptions: true },
+        include: {
+          role: true,
+          subscriptions: {
+            orderBy: { createdAt: "desc" },
+          },
+        },
       });
     });
 

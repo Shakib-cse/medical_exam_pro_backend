@@ -217,8 +217,8 @@ export class PreRegistrationService {
           alreadyRegistered: true,
           isExistingUser: true,
           message: isEligible
-            ? `Welcome back! Your existing account has secured Spot #${assignedQueue} of 100 with the 50% launch discount!`
-            : `Welcome back! Your existing account is enrolled on the launch waitlist (Spot #${assignedQueue}).`,
+            ? "Welcome back! Your registration is confirmed with the 50% early-bird launch discount."
+            : "Welcome back! Your registration is confirmed on the official launch waitlist.",
           data: {
             email: existingUser.email,
             fullName: existingUser.displayName || `${existingUser.firstName} ${existingUser.lastName}`,
@@ -415,8 +415,8 @@ export class PreRegistrationService {
       return {
         success: true,
         message: isEligible
-          ? `Spot #${assignedQueue} confirmed! You've secured the 50% launch discount!`
-          : `Spot #${assignedQueue} confirmed on the official launch waitlist!`,
+          ? "Registration confirmed! You've secured the 50% early-bird launch discount."
+          : "Registration confirmed on the official launch waitlist.",
         data: {
           email: updatedPreReg.email,
           fullName: updatedPreReg.fullName,

@@ -41,11 +41,11 @@ export const config = {
   },
   email: {
     host: process.env.SMTP_HOST || "smtp.gmail.com",
-    port: parseInt(process.env.SMTP_PORT || "465"),
-    secure: process.env.SMTP_SECURE === "true" || process.env.SMTP_PORT === "465",
+    port: parseInt(process.env.SMTP_PORT || "587"),
+    secure: process.env.SMTP_SECURE === "true" || (process.env.SMTP_PORT === "465" && process.env.SMTP_SECURE !== "false"),
     user: process.env.SMTP_USER || "",
-    pass: process.env.SMTP_PASS || "",
-    from: process.env.EMAIL_FROM || "Medical Exam Pro <no-reply@kawan.com>",
+    pass: (process.env.SMTP_PASS || "").replace(/^["']|["']$/g, ""),
+    from: process.env.EMAIL_FROM || "Medical Exam Pro <contact@medicalexampro.com>",
   },
   cloudinary: {
     cloudName: process.env.CLOUDINARY_CLOUD_NAME || "",
