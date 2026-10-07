@@ -10,46 +10,84 @@ import { requestId } from "./requestId";
 import { TimeoutError, RateLimitError } from "../core/errors/AppError";
 import timeout from "connect-timeout";
 
+import { AppLogger } from "../core/logging/logger";
+
+function isOriginAllowed(origin: string | undefined): boolean {
+  if (!origin) return true;
+  if (!config.server.isProduction) return true;
+
+  const rawAllowed = config.security.cors.allowedOrigins || "";
+  const allowedList = rawAllowed
+    .split(",")
+    .map((url) => url.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (allowedList.includes("*")) return true;
+
+  const originLower = origin.toLowerCase().trim();
+  if (allowedList.includes(originLower)) return true;
+
+  try {
+    const parsed = new URL(origin);
+    const hostname = parsed.hostname.toLowerCase();
+    const port = parsed.port;
+    const protocol = parsed.protocol;
+
+    // Localhost and loopback on any port
+    if (hostname === "localhost" || hostname === "127.0.0.1") return true;
+
+    // Any Vercel preview or production deployment (*.vercel.app)
+    if (hostname === "vercel.app" || hostname.endsWith(".vercel.app")) return true;
+
+    // Production domain and any subdomains (*.medicalexampro.com, medicalexampro.com)
+    if (hostname === "medicalexampro.com" || hostname.endsWith(".medicalexampro.com")) return true;
+
+    // Match protocol + hostname + optional port in allowed list
+    const normalized = `${protocol}//${hostname}${port ? `:${port}` : ""}`;
+    if (allowedList.includes(normalized)) return true;
+  } catch {
+    return false;
+  }
+
+  return false;
+}
+
 export function setupGlobalMiddlewares(app: Express) {
   app.set("trust proxy", 1);
   app.use(requestId());
-  app.use(
-    helmet({
-      contentSecurityPolicy: config.server.isProduction,
-      crossOriginEmbedderPolicy: config.server.isProduction,
-    }),
-  );
 
-  const allowedOriginsList = config.security.cors.allowedOrigins
-    .split(",")
-    .map((url) => url.trim());
-
+  // CORS Middleware (placed early to handle preflight OPTIONS immediately)
   app.use(
     cors({
       origin: (origin, callback) => {
-        let isVercelDomain = false;
-        try {
-          if (origin) {
-            const parsed = new URL(origin);
-            isVercelDomain = parsed.hostname.endsWith(".vercel.app");
-          }
-        } catch {}
-
-        if (
-          !origin ||
-          !config.server.isProduction ||
-          allowedOriginsList.includes("*") ||
-          allowedOriginsList.includes(origin) ||
-          isVercelDomain ||
-          /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin)
-        ) {
+        if (isOriginAllowed(origin)) {
           callback(null, true);
         } else {
+          AppLogger.warn(`[CORS] Blocked request from origin: ${origin}`);
           callback(new Error(`CORS error: Origin ${origin} not allowed`));
         }
       },
       credentials: true,
+      methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+      allowedHeaders: [
+        "Content-Type",
+        "Authorization",
+        "X-Requested-With",
+        "Accept",
+        "Origin",
+        "X-Request-Id",
+        "Cache-Control",
+      ],
+      exposedHeaders: ["X-Request-Id"],
       optionsSuccessStatus: 200,
+    }),
+  );
+
+  app.use(
+    helmet({
+      contentSecurityPolicy: false,
+      crossOriginEmbedderPolicy: false,
+      crossOriginResourcePolicy: { policy: "cross-origin" },
     }),
   );
 

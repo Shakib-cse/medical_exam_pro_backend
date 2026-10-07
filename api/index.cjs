@@ -71981,10 +71981,10 @@ var require_lib3 = __commonJS({
       function isString(s) {
         return typeof s === "string" || s instanceof String;
       }
-      function isOriginAllowed(origin, allowedOrigin) {
+      function isOriginAllowed2(origin, allowedOrigin) {
         if (Array.isArray(allowedOrigin)) {
           for (var i = 0; i < allowedOrigin.length; ++i) {
-            if (isOriginAllowed(origin, allowedOrigin[i])) {
+            if (isOriginAllowed2(origin, allowedOrigin[i])) {
               return true;
             }
           }
@@ -72014,7 +72014,7 @@ var require_lib3 = __commonJS({
             value: "Origin"
           }]);
         } else {
-          isAllowed = isOriginAllowed(requestOrigin, options.origin);
+          isAllowed = isOriginAllowed2(requestOrigin, options.origin);
           headers.push([{
             key: "Access-Control-Allow-Origin",
             value: isAllowed ? requestOrigin : false
@@ -153527,35 +153527,62 @@ function requestId() {
 
 // src/middleware/globalMiddlewares.ts
 var import_connect_timeout = __toESM(require_connect_timeout(), 1);
+function isOriginAllowed(origin) {
+  if (!origin) return true;
+  if (!config.server.isProduction) return true;
+  const rawAllowed = config.security.cors.allowedOrigins || "";
+  const allowedList = rawAllowed.split(",").map((url2) => url2.trim().toLowerCase()).filter(Boolean);
+  if (allowedList.includes("*")) return true;
+  const originLower = origin.toLowerCase().trim();
+  if (allowedList.includes(originLower)) return true;
+  try {
+    const parsed = new URL(origin);
+    const hostname3 = parsed.hostname.toLowerCase();
+    const port = parsed.port;
+    const protocol = parsed.protocol;
+    if (hostname3 === "localhost" || hostname3 === "127.0.0.1") return true;
+    if (hostname3 === "vercel.app" || hostname3.endsWith(".vercel.app")) return true;
+    if (hostname3 === "medicalexampro.com" || hostname3.endsWith(".medicalexampro.com")) return true;
+    const normalized = `${protocol}//${hostname3}${port ? `:${port}` : ""}`;
+    if (allowedList.includes(normalized)) return true;
+  } catch {
+    return false;
+  }
+  return false;
+}
 function setupGlobalMiddlewares(app2) {
   app2.set("trust proxy", 1);
   app2.use(requestId());
   app2.use(
-    helmet({
-      contentSecurityPolicy: config.server.isProduction,
-      crossOriginEmbedderPolicy: config.server.isProduction
-    })
-  );
-  const allowedOriginsList = config.security.cors.allowedOrigins.split(",").map((url2) => url2.trim());
-  app2.use(
     (0, import_cors.default)({
       origin: (origin, callback) => {
-        let isVercelDomain = false;
-        try {
-          if (origin) {
-            const parsed = new URL(origin);
-            isVercelDomain = parsed.hostname.endsWith(".vercel.app");
-          }
-        } catch {
-        }
-        if (!origin || !config.server.isProduction || allowedOriginsList.includes("*") || allowedOriginsList.includes(origin) || isVercelDomain || /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin)) {
+        if (isOriginAllowed(origin)) {
           callback(null, true);
         } else {
+          AppLogger.warn(`[CORS] Blocked request from origin: ${origin}`);
           callback(new Error(`CORS error: Origin ${origin} not allowed`));
         }
       },
       credentials: true,
+      methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+      allowedHeaders: [
+        "Content-Type",
+        "Authorization",
+        "X-Requested-With",
+        "Accept",
+        "Origin",
+        "X-Request-Id",
+        "Cache-Control"
+      ],
+      exposedHeaders: ["X-Request-Id"],
       optionsSuccessStatus: 200
+    })
+  );
+  app2.use(
+    helmet({
+      contentSecurityPolicy: false,
+      crossOriginEmbedderPolicy: false,
+      crossOriginResourcePolicy: { policy: "cross-origin" }
     })
   );
   app2.use((0, import_cookie_parser.default)());
