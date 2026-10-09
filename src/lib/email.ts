@@ -3,6 +3,7 @@ import { config } from "../core/config";
 import { AppLogger } from "../core/logging/logger";
 
 const LOGO_URL = "https://medicalexampro.com/images/headerlogo.png";
+const DOMAIN = "medicalexampro.com";
 
 class MailService {
   private transporter: nodemailer.Transporter | null = null;
@@ -28,12 +29,39 @@ class MailService {
           user: config.email.user,
           pass: config.email.pass,
         },
+        tls: {
+          rejectUnauthorized: true,
+        },
       });
 
-      AppLogger.info(`SMTP Mail Service initialized with user: ${config.email.user} on port ${config.email.port}`);
+      AppLogger.info(
+        `SMTP Mail Service initialized with user: ${config.email.user} on port ${config.email.port}`
+      );
     } catch (error) {
       AppLogger.error("Failed to initialize SMTP transporter:", { error });
     }
+  }
+
+  /**
+   * Generates a domain-aligned Message-ID for maximum deliverability and anti-spoof compliance
+   */
+  private generateMessageId(): string {
+    const timestamp = Date.now();
+    const randomPart = Math.random().toString(36).substring(2, 10);
+    return `<mep.${timestamp}.${randomPart}@${DOMAIN}>`;
+  }
+
+  /**
+   * Standard transactional email headers to ensure mailboxes classify as high-priority primary mail
+   */
+  private getTransactionalHeaders() {
+    return {
+      "X-Priority": "1",
+      Importance: "high",
+      "Auto-Submitted": "auto-generated",
+      "X-Auto-Response-Suppress": "All",
+      "X-Report-Abuse": "Please report abuse to contact@medicalexampro.com",
+    };
   }
 
   /**
@@ -54,13 +82,36 @@ class MailService {
     }
 
     const isReset = type === "reset_password";
+    // Non-spammy subject line following standard transactional format
     const subject = isReset
-      ? `Medical Exam Pro: Password Reset Code: ${otp}`
-      : `Medical Exam Pro: Email Verification Code: ${otp}`;
+      ? `Medical Exam Pro: Your password reset code is ${otp}`
+      : `Medical Exam Pro: Your verification code is ${otp}`;
+
     const actionText = isReset
       ? "We received a request to reset the password for your Medical Exam Pro account. Please use the verification code below to proceed:"
       : "Thank you for creating an account with Medical Exam Pro. Please verify your email address using the verification code below:";
+
     const recipientName = name && name.trim() ? name.trim() : "Candidate";
+
+    // Plain text alternative (CRITICAL for SpamAssassin and mailbox deliverability)
+    const textContent = `
+Dear ${recipientName},
+
+${actionText}
+
+Your verification code is: ${otp}
+
+This code expires in 10 minutes.
+
+If you did not request this verification code, please ignore this email or contact support at contact@medicalexampro.com.
+
+Kind regards,
+The Medical Exam Pro Team
+https://medicalexampro.com
+
+Medical Exam Pro Ltd • London, United Kingdom
+© ${new Date().getFullYear()} Medical Exam Pro. All rights reserved.
+`.trim();
 
     const htmlContent = `
 <!DOCTYPE html>
@@ -126,7 +177,10 @@ class MailService {
           <tr>
             <td style="background-color: #f8fafc; padding: 20px 32px; text-align: center; border-top: 1px solid #e2e8f0;">
               <p style="margin: 0 0 4px 0; font-size: 12px; color: #64748b;">
-                Medical Exam Pro &bull; UK MSRA &amp; Medical Recruitment Assessment Platform
+                Medical Exam Pro Ltd &bull; UK MSRA &amp; Medical Recruitment Assessment Platform
+              </p>
+              <p style="margin: 0 0 4px 0; font-size: 11px; color: #94a3b8;">
+                London, United Kingdom &bull; contact@medicalexampro.com
               </p>
               <p style="margin: 0; font-size: 11px; color: #94a3b8;">
                 &copy; ${new Date().getFullYear()} Medical Exam Pro. All rights reserved.
@@ -144,9 +198,13 @@ class MailService {
     try {
       const info = await this.transporter.sendMail({
         from: config.email.from,
+        replyTo: "Medical Exam Pro <contact@medicalexampro.com>",
         to,
         subject,
+        text: textContent,
         html: htmlContent,
+        messageId: this.generateMessageId(),
+        headers: this.getTransactionalHeaders(),
       });
 
       AppLogger.info(`[Email Sent] MessageId: ${info.messageId} | To: ${to} | Subject: ${subject}`);
@@ -173,8 +231,29 @@ class MailService {
       }
     }
 
-    const subject = `Medical Exam Pro: Verification Code: ${otp}`;
+    const subject = `Medical Exam Pro: Your verification code is ${otp}`;
     const displayName = name && name.trim() ? name.trim() : "Candidate";
+
+    const textContent = `
+Dear ${displayName},
+
+Thank you for pre-registering with Medical Exam Pro. Please use the 6-digit verification code below to confirm your email address and secure your early-bird registration:
+
+Verification Code: ${otp}
+
+This verification code expires in 10 minutes.
+
+Once verified, your early-bird discount will be reserved for our platform launch in November 2026.
+
+If you did not initiate this pre-registration, please disregard this email.
+
+Kind regards,
+The Medical Exam Pro Team
+https://medicalexampro.com
+
+Medical Exam Pro Ltd • London, United Kingdom
+© ${new Date().getFullYear()} Medical Exam Pro. All rights reserved.
+`.trim();
 
     const htmlContent = `
 <!DOCTYPE html>
@@ -244,7 +323,10 @@ class MailService {
           <tr>
             <td style="background-color: #f8fafc; padding: 20px 32px; text-align: center; border-top: 1px solid #e2e8f0;">
               <p style="margin: 0 0 4px 0; font-size: 12px; color: #64748b;">
-                Medical Exam Pro &bull; UK MSRA &amp; Medical Recruitment Assessment Platform
+                Medical Exam Pro Ltd &bull; UK MSRA &amp; Medical Recruitment Assessment Platform
+              </p>
+              <p style="margin: 0 0 4px 0; font-size: 11px; color: #94a3b8;">
+                London, United Kingdom &bull; contact@medicalexampro.com
               </p>
               <p style="margin: 0; font-size: 11px; color: #94a3b8;">
                 &copy; ${new Date().getFullYear()} Medical Exam Pro. All rights reserved.
@@ -262,9 +344,13 @@ class MailService {
     try {
       const info = await this.transporter.sendMail({
         from: config.email.from,
+        replyTo: "Medical Exam Pro <contact@medicalexampro.com>",
         to,
         subject,
+        text: textContent,
         html: htmlContent,
+        messageId: this.generateMessageId(),
+        headers: this.getTransactionalHeaders(),
       });
 
       AppLogger.info(`[Pre-Reg OTP Sent] MessageId: ${info.messageId} | To: ${to}`);
@@ -277,7 +363,6 @@ class MailService {
 
   /**
    * Send Pre-Registration Confirmation Email
-   * (Displays official confirmation without queue numbers or remaining places)
    */
   public async sendPreRegistrationConfirmedEmail(
     to: string,
@@ -295,10 +380,32 @@ class MailService {
     }
 
     const displayName = data.name && data.name.trim() ? data.name.trim() : "Candidate";
-    const isDiscount = data.isEligibleForDiscount;
-    const subject = isDiscount
-      ? "Medical Exam Pro: 50% Launch Discount Confirmed"
-      : "Medical Exam Pro: Pre-Registration Confirmed";
+    // Avoid spam trigger words like "50% Discount" in subject
+    const subject = "Medical Exam Pro: Pre-Registration Confirmed";
+
+    const textContent = `
+Dear ${displayName},
+
+Thank you for pre-registering for Medical Exam Pro. Your email address has been verified, and your early-bird launch access has been confirmed.
+
+Registration Details:
+- Status: Launch Priority Confirmed
+- Registered Email: ${to}
+- Target Examination: UK MSRA (Clinical Problem Solving & Professional Dilemmas)
+- Official Launch: November 2026
+
+What happens next?
+Ahead of our official launch in November 2026, we will email your exclusive early-access invitation and launch discount directly to ${to}.
+
+If you have any questions, reach out to our team at contact@medicalexampro.com.
+
+Kind regards,
+The Medical Exam Pro Team
+https://medicalexampro.com
+
+Medical Exam Pro Ltd • London, United Kingdom
+© ${new Date().getFullYear()} Medical Exam Pro. All rights reserved.
+`.trim();
 
     const htmlContent = `
 <!DOCTYPE html>
@@ -326,7 +433,7 @@ class MailService {
           <tr>
             <td style="padding: 36px 32px;">
               <h1 style="margin: 0 0 16px 0; font-size: 20px; font-weight: 700; color: #071729;">
-                ${isDiscount ? "50% Launch Discount Confirmed" : "Pre-Registration Confirmed"}
+                Pre-Registration Confirmed
               </h1>
 
               <p style="margin: 0 0 16px 0; font-size: 15px; line-height: 24px; color: #1e293b;">
@@ -334,11 +441,7 @@ class MailService {
               </p>
 
               <p style="margin: 0 0 20px 0; font-size: 14px; line-height: 22px; color: #475569;">
-                ${
-                  isDiscount
-                    ? "Thank you for pre-registering for Medical Exam Pro. Your email address has been verified, and your <strong>50% early-bird launch discount</strong> has been secured."
-                    : "Thank you for pre-registering for Medical Exam Pro. Your email address has been verified, and you are confirmed on our official launch list."
-                }
+                Thank you for pre-registering for Medical Exam Pro. Your email address has been verified, and your early-bird registration has been secured.
               </p>
 
               <!-- Confirmation Details Table -->
@@ -348,7 +451,7 @@ class MailService {
                     Status
                   </td>
                   <td style="padding: 14px 20px; border-bottom: 1px solid #e2e8f0; font-size: 13px; font-weight: 600; color: #071729;">
-                    ${isDiscount ? "50% Launch Discount Reserved" : "Launch Priority Confirmed"}
+                    Launch Priority Confirmed
                   </td>
                 </tr>
                 <tr>
@@ -381,11 +484,7 @@ class MailService {
                 What happens next?
               </h2>
               <p style="margin: 0 0 16px 0; font-size: 14px; line-height: 22px; color: #475569;">
-                ${
-                  isDiscount
-                    ? `Ahead of our official launch in November 2026, we will email your exclusive early-access link and 50% discount details directly to <strong>${to}</strong> so you can immediately begin your MSRA preparation.`
-                    : `Ahead of our official launch in November 2026, we will email your early-access invitation directly to <strong>${to}</strong>.`
-                }
+                Ahead of our official launch in November 2026, we will email your exclusive early-access link directly to <strong>${to}</strong> so you can immediately begin your MSRA preparation.
               </p>
 
               <div style="margin-top: 32px; padding-top: 20px; border-top: 1px solid #f1f5f9;">
@@ -403,7 +502,10 @@ class MailService {
           <tr>
             <td style="background-color: #f8fafc; padding: 20px 32px; text-align: center; border-top: 1px solid #e2e8f0;">
               <p style="margin: 0 0 4px 0; font-size: 12px; color: #64748b;">
-                Medical Exam Pro &bull; UK MSRA &amp; Medical Recruitment Assessment Platform
+                Medical Exam Pro Ltd &bull; UK MSRA &amp; Medical Recruitment Assessment Platform
+              </p>
+              <p style="margin: 0 0 4px 0; font-size: 11px; color: #94a3b8;">
+                London, United Kingdom &bull; contact@medicalexampro.com
               </p>
               <p style="margin: 0; font-size: 11px; color: #94a3b8;">
                 &copy; ${new Date().getFullYear()} Medical Exam Pro. All rights reserved.
@@ -421,9 +523,13 @@ class MailService {
     try {
       const info = await this.transporter.sendMail({
         from: config.email.from,
+        replyTo: "Medical Exam Pro <contact@medicalexampro.com>",
         to,
         subject,
+        text: textContent,
         html: htmlContent,
+        messageId: this.generateMessageId(),
+        headers: this.getTransactionalHeaders(),
       });
 
       AppLogger.info(`[Pre-Reg Confirmed Sent] MessageId: ${info.messageId} | To: ${to}`);
