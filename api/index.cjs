@@ -154711,6 +154711,7 @@ var import_prisma2 = __toESM(require_prisma(), 1);
 // src/lib/email.ts
 var import_nodemailer = __toESM(require_nodemailer(), 1);
 var LOGO_URL = "https://medicalexampro.com/images/headerlogo.png";
+var DOMAIN = "medicalexampro.com";
 var MailService = class {
   transporter = null;
   constructor() {
@@ -154731,12 +154732,37 @@ var MailService = class {
         auth: {
           user: config.email.user,
           pass: config.email.pass
+        },
+        tls: {
+          rejectUnauthorized: true
         }
       });
-      AppLogger.info(`SMTP Mail Service initialized with user: ${config.email.user} on port ${config.email.port}`);
+      AppLogger.info(
+        `SMTP Mail Service initialized with user: ${config.email.user} on port ${config.email.port}`
+      );
     } catch (error48) {
       AppLogger.error("Failed to initialize SMTP transporter:", { error: error48 });
     }
+  }
+  /**
+   * Generates a domain-aligned Message-ID for maximum deliverability and anti-spoof compliance
+   */
+  generateMessageId() {
+    const timestamp2 = Date.now();
+    const randomPart = Math.random().toString(36).substring(2, 10);
+    return `<mep.${timestamp2}.${randomPart}@${DOMAIN}>`;
+  }
+  /**
+   * Standard transactional email headers to ensure mailboxes classify as high-priority primary mail
+   */
+  getTransactionalHeaders() {
+    return {
+      "X-Priority": "1",
+      Importance: "high",
+      "Auto-Submitted": "auto-generated",
+      "X-Auto-Response-Suppress": "All",
+      "X-Report-Abuse": "Please report abuse to contact@medicalexampro.com"
+    };
   }
   /**
    * Send Platform Account OTP (Verification or Password Reset)
@@ -154750,9 +154776,27 @@ var MailService = class {
       }
     }
     const isReset = type === "reset_password";
-    const subject = isReset ? `Medical Exam Pro: Password Reset Code: ${otp}` : `Medical Exam Pro: Email Verification Code: ${otp}`;
+    const subject = isReset ? `Medical Exam Pro: Your password reset code is ${otp}` : `Medical Exam Pro: Your verification code is ${otp}`;
     const actionText = isReset ? "We received a request to reset the password for your Medical Exam Pro account. Please use the verification code below to proceed:" : "Thank you for creating an account with Medical Exam Pro. Please verify your email address using the verification code below:";
     const recipientName = name2 && name2.trim() ? name2.trim() : "Candidate";
+    const textContent = `
+Dear ${recipientName},
+
+${actionText}
+
+Your verification code is: ${otp}
+
+This code expires in 10 minutes.
+
+If you did not request this verification code, please ignore this email or contact support at contact@medicalexampro.com.
+
+Kind regards,
+The Medical Exam Pro Team
+https://medicalexampro.com
+
+Medical Exam Pro Ltd \u2022 London, United Kingdom
+\xA9 ${(/* @__PURE__ */ new Date()).getFullYear()} Medical Exam Pro. All rights reserved.
+`.trim();
     const htmlContent = `
 <!DOCTYPE html>
 <html lang="en">
@@ -154817,7 +154861,10 @@ var MailService = class {
           <tr>
             <td style="background-color: #f8fafc; padding: 20px 32px; text-align: center; border-top: 1px solid #e2e8f0;">
               <p style="margin: 0 0 4px 0; font-size: 12px; color: #64748b;">
-                Medical Exam Pro &bull; UK MSRA &amp; Medical Recruitment Assessment Platform
+                Medical Exam Pro Ltd &bull; UK MSRA &amp; Medical Recruitment Assessment Platform
+              </p>
+              <p style="margin: 0 0 4px 0; font-size: 11px; color: #94a3b8;">
+                London, United Kingdom &bull; contact@medicalexampro.com
               </p>
               <p style="margin: 0; font-size: 11px; color: #94a3b8;">
                 &copy; ${(/* @__PURE__ */ new Date()).getFullYear()} Medical Exam Pro. All rights reserved.
@@ -154834,9 +154881,13 @@ var MailService = class {
     try {
       const info = await this.transporter.sendMail({
         from: config.email.from,
+        replyTo: "Medical Exam Pro <contact@medicalexampro.com>",
         to,
         subject,
-        html: htmlContent
+        text: textContent,
+        html: htmlContent,
+        messageId: this.generateMessageId(),
+        headers: this.getTransactionalHeaders()
       });
       AppLogger.info(`[Email Sent] MessageId: ${info.messageId} | To: ${to} | Subject: ${subject}`);
       return true;
@@ -154856,8 +154907,28 @@ var MailService = class {
         return false;
       }
     }
-    const subject = `Medical Exam Pro: Verification Code: ${otp}`;
+    const subject = `Medical Exam Pro: Your verification code is ${otp}`;
     const displayName = name2 && name2.trim() ? name2.trim() : "Candidate";
+    const textContent = `
+Dear ${displayName},
+
+Thank you for pre-registering with Medical Exam Pro. Please use the 6-digit verification code below to confirm your email address and secure your early-bird registration:
+
+Verification Code: ${otp}
+
+This verification code expires in 10 minutes.
+
+Once verified, your early-bird discount will be reserved for our platform launch in November 2026.
+
+If you did not initiate this pre-registration, please disregard this email.
+
+Kind regards,
+The Medical Exam Pro Team
+https://medicalexampro.com
+
+Medical Exam Pro Ltd \u2022 London, United Kingdom
+\xA9 ${(/* @__PURE__ */ new Date()).getFullYear()} Medical Exam Pro. All rights reserved.
+`.trim();
     const htmlContent = `
 <!DOCTYPE html>
 <html lang="en">
@@ -154926,7 +154997,10 @@ var MailService = class {
           <tr>
             <td style="background-color: #f8fafc; padding: 20px 32px; text-align: center; border-top: 1px solid #e2e8f0;">
               <p style="margin: 0 0 4px 0; font-size: 12px; color: #64748b;">
-                Medical Exam Pro &bull; UK MSRA &amp; Medical Recruitment Assessment Platform
+                Medical Exam Pro Ltd &bull; UK MSRA &amp; Medical Recruitment Assessment Platform
+              </p>
+              <p style="margin: 0 0 4px 0; font-size: 11px; color: #94a3b8;">
+                London, United Kingdom &bull; contact@medicalexampro.com
               </p>
               <p style="margin: 0; font-size: 11px; color: #94a3b8;">
                 &copy; ${(/* @__PURE__ */ new Date()).getFullYear()} Medical Exam Pro. All rights reserved.
@@ -154943,9 +155017,13 @@ var MailService = class {
     try {
       const info = await this.transporter.sendMail({
         from: config.email.from,
+        replyTo: "Medical Exam Pro <contact@medicalexampro.com>",
         to,
         subject,
-        html: htmlContent
+        text: textContent,
+        html: htmlContent,
+        messageId: this.generateMessageId(),
+        headers: this.getTransactionalHeaders()
       });
       AppLogger.info(`[Pre-Reg OTP Sent] MessageId: ${info.messageId} | To: ${to}`);
       return true;
@@ -154956,7 +155034,6 @@ var MailService = class {
   }
   /**
    * Send Pre-Registration Confirmation Email
-   * (Displays official confirmation without queue numbers or remaining places)
    */
   async sendPreRegistrationConfirmedEmail(to, data) {
     if (!this.transporter) {
@@ -154964,8 +155041,30 @@ var MailService = class {
       if (!this.transporter) return false;
     }
     const displayName = data.name && data.name.trim() ? data.name.trim() : "Candidate";
-    const isDiscount = data.isEligibleForDiscount;
-    const subject = isDiscount ? "Medical Exam Pro: 50% Launch Discount Confirmed" : "Medical Exam Pro: Pre-Registration Confirmed";
+    const subject = "Medical Exam Pro: Pre-Registration Confirmed";
+    const textContent = `
+Dear ${displayName},
+
+Thank you for pre-registering for Medical Exam Pro. Your email address has been verified, and your early-bird launch access has been confirmed.
+
+Registration Details:
+- Status: Launch Priority Confirmed
+- Registered Email: ${to}
+- Target Examination: UK MSRA (Clinical Problem Solving & Professional Dilemmas)
+- Official Launch: November 2026
+
+What happens next?
+Ahead of our official launch in November 2026, we will email your exclusive early-access invitation and launch discount directly to ${to}.
+
+If you have any questions, reach out to our team at contact@medicalexampro.com.
+
+Kind regards,
+The Medical Exam Pro Team
+https://medicalexampro.com
+
+Medical Exam Pro Ltd \u2022 London, United Kingdom
+\xA9 ${(/* @__PURE__ */ new Date()).getFullYear()} Medical Exam Pro. All rights reserved.
+`.trim();
     const htmlContent = `
 <!DOCTYPE html>
 <html lang="en">
@@ -154992,7 +155091,7 @@ var MailService = class {
           <tr>
             <td style="padding: 36px 32px;">
               <h1 style="margin: 0 0 16px 0; font-size: 20px; font-weight: 700; color: #071729;">
-                ${isDiscount ? "50% Launch Discount Confirmed" : "Pre-Registration Confirmed"}
+                Pre-Registration Confirmed
               </h1>
 
               <p style="margin: 0 0 16px 0; font-size: 15px; line-height: 24px; color: #1e293b;">
@@ -155000,7 +155099,7 @@ var MailService = class {
               </p>
 
               <p style="margin: 0 0 20px 0; font-size: 14px; line-height: 22px; color: #475569;">
-                ${isDiscount ? "Thank you for pre-registering for Medical Exam Pro. Your email address has been verified, and your <strong>50% early-bird launch discount</strong> has been secured." : "Thank you for pre-registering for Medical Exam Pro. Your email address has been verified, and you are confirmed on our official launch list."}
+                Thank you for pre-registering for Medical Exam Pro. Your email address has been verified, and your early-bird registration has been secured.
               </p>
 
               <!-- Confirmation Details Table -->
@@ -155010,7 +155109,7 @@ var MailService = class {
                     Status
                   </td>
                   <td style="padding: 14px 20px; border-bottom: 1px solid #e2e8f0; font-size: 13px; font-weight: 600; color: #071729;">
-                    ${isDiscount ? "50% Launch Discount Reserved" : "Launch Priority Confirmed"}
+                    Launch Priority Confirmed
                   </td>
                 </tr>
                 <tr>
@@ -155043,7 +155142,7 @@ var MailService = class {
                 What happens next?
               </h2>
               <p style="margin: 0 0 16px 0; font-size: 14px; line-height: 22px; color: #475569;">
-                ${isDiscount ? `Ahead of our official launch in November 2026, we will email your exclusive early-access link and 50% discount details directly to <strong>${to}</strong> so you can immediately begin your MSRA preparation.` : `Ahead of our official launch in November 2026, we will email your early-access invitation directly to <strong>${to}</strong>.`}
+                Ahead of our official launch in November 2026, we will email your exclusive early-access link directly to <strong>${to}</strong> so you can immediately begin your MSRA preparation.
               </p>
 
               <div style="margin-top: 32px; padding-top: 20px; border-top: 1px solid #f1f5f9;">
@@ -155061,7 +155160,10 @@ var MailService = class {
           <tr>
             <td style="background-color: #f8fafc; padding: 20px 32px; text-align: center; border-top: 1px solid #e2e8f0;">
               <p style="margin: 0 0 4px 0; font-size: 12px; color: #64748b;">
-                Medical Exam Pro &bull; UK MSRA &amp; Medical Recruitment Assessment Platform
+                Medical Exam Pro Ltd &bull; UK MSRA &amp; Medical Recruitment Assessment Platform
+              </p>
+              <p style="margin: 0 0 4px 0; font-size: 11px; color: #94a3b8;">
+                London, United Kingdom &bull; contact@medicalexampro.com
               </p>
               <p style="margin: 0; font-size: 11px; color: #94a3b8;">
                 &copy; ${(/* @__PURE__ */ new Date()).getFullYear()} Medical Exam Pro. All rights reserved.
@@ -155078,9 +155180,13 @@ var MailService = class {
     try {
       const info = await this.transporter.sendMail({
         from: config.email.from,
+        replyTo: "Medical Exam Pro <contact@medicalexampro.com>",
         to,
         subject,
-        html: htmlContent
+        text: textContent,
+        html: htmlContent,
+        messageId: this.generateMessageId(),
+        headers: this.getTransactionalHeaders()
       });
       AppLogger.info(`[Pre-Reg Confirmed Sent] MessageId: ${info.messageId} | To: ${to}`);
       return true;
@@ -170455,7 +170561,7 @@ var QuestionBankService = class {
       this.warmupCaches().catch((err) => {
         console.warn("Background warmup error:", err?.message || err);
       });
-    }, 100);
+    }, 1e3);
   }
   prisma;
   specialtySummaryCache = /* @__PURE__ */ new Map();
@@ -170485,17 +170591,46 @@ var QuestionBankService = class {
           durationMinutes: true,
           questionCount: true,
           createdAt: true,
-          updatedAt: true,
-          questions: {
-            select: {
-              id: true,
-              subTopic: true,
-              questionType: true
-            },
-            orderBy: { order: "asc" }
-          }
+          updatedAt: true
         }
       });
+      const countAggs = await this.prisma.$queryRaw`
+        SELECT questionBankId, 
+               COUNT(*) as totalQ,
+               SUM(CASE WHEN questionType = 'SBA' THEN 1 ELSE 0 END) as sbaCount,
+               SUM(CASE WHEN questionType = 'EMQ' THEN 1 ELSE 0 END) as emqThemesCount,
+               SUM(CASE WHEN questionType = 'EMQ' THEN COALESCE(JSON_LENGTH(cases), 1) ELSE 0 END) as emqCasesCount,
+               SUM(CASE WHEN questionType = 'RANKING' THEN 1 ELSE 0 END) as rankingCount,
+               SUM(CASE WHEN questionType = 'SELECT_3' THEN 1 ELSE 0 END) as select3Count
+        FROM BankQuestion
+        WHERE questionBankId IS NOT NULL
+        GROUP BY questionBankId
+      `;
+      const countsMap = /* @__PURE__ */ new Map();
+      for (const row of countAggs) {
+        countsMap.set(row.questionBankId, {
+          sbaCount: Number(row.sbaCount || 0),
+          emqThemesCount: Number(row.emqThemesCount || 0),
+          emqCasesCount: Number(row.emqCasesCount || 0),
+          rankingCount: Number(row.rankingCount || 0),
+          select3Count: Number(row.select3Count || 0)
+        });
+      }
+      const subtopicsRows = await this.prisma.$queryRaw`
+        SELECT DISTINCT questionBankId, subTopic
+        FROM BankQuestion
+        WHERE questionBankId IS NOT NULL AND subTopic IS NOT NULL AND subTopic != ''
+      `;
+      const subtopicsMap = /* @__PURE__ */ new Map();
+      for (const st of subtopicsRows) {
+        if (!subtopicsMap.has(st.questionBankId)) {
+          subtopicsMap.set(st.questionBankId, []);
+        }
+        subtopicsMap.get(st.questionBankId).push(st.subTopic.trim());
+      }
+      for (const [k, list] of subtopicsMap.entries()) {
+        subtopicsMap.set(k, Array.from(new Set(list)).sort());
+      }
       const now = Date.now();
       const slugMap = {
         cardiovascular: "Cardiovascular Medicine",
@@ -170524,33 +170659,16 @@ var QuestionBankService = class {
         "professionalism-integrity": "Professionalism & Integrity"
       };
       const baseList = banks.map((bank) => {
-        const counts = this.computeQuestionCounts(bank.questions, bank.questionCount || 0);
-        const subTopics = Array.from(
-          new Set(
-            (bank.questions || []).map((q) => q.subTopic).filter((st) => Boolean(st && st.trim()))
-          )
-        ).sort();
-        const subTopicCounts = {};
-        for (const q of bank.questions || []) {
-          if (!q.subTopic) continue;
-          const st = q.subTopic.trim();
-          if (!subTopicCounts[st]) {
-            subTopicCounts[st] = { total: 0, ranking: 0, select3: 0, sba: 0, emq: 0 };
-          }
-          if (q.questionType === "RANKING") {
-            subTopicCounts[st].ranking++;
-            subTopicCounts[st].total++;
-          } else if (q.questionType === "SELECT_3") {
-            subTopicCounts[st].select3++;
-            subTopicCounts[st].total++;
-          } else if (q.questionType === "EMQ") {
-            subTopicCounts[st].emq++;
-            subTopicCounts[st].total++;
-          } else {
-            subTopicCounts[st].sba++;
-            subTopicCounts[st].total++;
-          }
-        }
+        const counts = countsMap.get(bank.id) || {
+          sbaCount: 0,
+          emqThemesCount: 0,
+          emqCasesCount: 0,
+          rankingCount: 0,
+          select3Count: 0
+        };
+        const isSJT = counts.rankingCount + counts.select3Count > 0;
+        const total = isSJT ? counts.rankingCount + counts.select3Count : counts.sbaCount + counts.emqCasesCount > 0 ? counts.sbaCount + counts.emqCasesCount : bank.questionCount || 0;
+        const subTopics = subtopicsMap.get(bank.id) || [];
         const summaryResult = {
           id: bank.id,
           title: bank.title,
@@ -170561,15 +170679,15 @@ var QuestionBankService = class {
           difficultyBadge: bank.difficultyBadge,
           difficultyType: bank.difficultyType,
           durationMinutes: bank.durationMinutes,
-          questionCount: counts.questionCount,
-          totalQuestions: counts.questionCount,
+          questionCount: total,
+          totalQuestions: total,
           sbaCount: counts.sbaCount,
-          emqCount: counts.emqCount,
+          emqCount: counts.emqCasesCount,
           emqThemesCount: counts.emqThemesCount,
           rankingCount: counts.rankingCount,
           select3Count: counts.select3Count,
           subTopics,
-          subTopicCounts,
+          subTopicCounts: {},
           stats: {
             attempted: 0,
             correct: 0,
@@ -170603,10 +170721,10 @@ var QuestionBankService = class {
           difficultyBadge: bank.difficultyBadge,
           difficultyType: bank.difficultyType,
           durationMinutes: bank.durationMinutes,
-          questionCount: counts.questionCount,
-          totalQuestions: counts.questionCount,
+          questionCount: total,
+          totalQuestions: total,
           sbaCount: counts.sbaCount,
-          emqCount: counts.emqCount,
+          emqCount: counts.emqCasesCount,
           emqThemesCount: counts.emqThemesCount,
           rankingCount: counts.rankingCount,
           select3Count: counts.select3Count,
@@ -170676,9 +170794,17 @@ var QuestionBankService = class {
     for (const q of questions) {
       if (q.questionType === "EMQ") {
         emqThemesCount++;
+        let casesLen = 0;
         if (Array.isArray(q.cases)) {
-          emqCasesCount += q.cases.length;
+          casesLen = q.cases.length;
+        } else if (typeof q.cases === "string") {
+          try {
+            const parsed = JSON.parse(q.cases);
+            if (Array.isArray(parsed)) casesLen = parsed.length;
+          } catch {
+          }
         }
+        emqCasesCount += casesLen > 0 ? casesLen : 1;
       } else if (q.questionType === "RANKING") {
         rankingCount++;
       } else if (q.questionType === "SELECT_3") {
@@ -171385,9 +171511,10 @@ var QuestionBankService = class {
   }
   /**
    * Record a candidate's answer for a question and dynamically recalculate peer selection percentages.
+   * Supports both BankQuestion and MockQuestion records using pure real submission data.
    */
   async recordQuestionAnswer(questionId, payload) {
-    const question = await this.prisma.bankQuestion.findUnique({
+    let bankQuestion = await this.prisma.bankQuestion.findUnique({
       where: { id: questionId },
       include: {
         questionBank: {
@@ -171395,17 +171522,29 @@ var QuestionBankService = class {
         }
       }
     });
-    if (!question) {
+    let mockQuestion = null;
+    if (!bankQuestion) {
+      mockQuestion = await this.prisma.mockQuestion.findUnique({
+        where: { id: questionId },
+        include: {
+          mockExam: {
+            select: { id: true, title: true, category: true }
+          }
+        }
+      });
+    }
+    if (!bankQuestion && !mockQuestion) {
       throw new Error(`Question ${questionId} not found`);
     }
-    const casesData = question.cases || {};
+    const question = bankQuestion || mockQuestion;
+    const casesData = question?.cases || {};
     const selectedOptions = (payload.selectedOptions || []).map((o) => String(o).toUpperCase().trim());
-    const rawOptions = Array.isArray(question.options) ? question.options : [];
+    const rawOptions = Array.isArray(question?.options) ? question?.options : [];
     const parsedLetters = rawOptions.map((opt) => {
       const match2 = String(opt).match(/^([A-Za-z])/);
       return match2 ? match2[1].toUpperCase() : "";
     }).filter(Boolean);
-    const optionKeys = parsedLetters.length > 0 ? parsedLetters : ["A", "B", "C", "D", "E", "F", "G", "H"].slice(0, rawOptions.length || 8);
+    const optionKeys = parsedLetters.length > 0 ? parsedLetters : ["A", "B", "C", "D", "E", "F", "G", "H"].slice(0, rawOptions.length || 4);
     let totalAttempts = typeof casesData.totalAttempts === "number" ? casesData.totalAttempts : 0;
     let selectionCounts = { ...casesData.selectionCounts || {} };
     totalAttempts += 1;
@@ -171417,7 +171556,7 @@ var QuestionBankService = class {
     const updatedPeerStats = {};
     for (const key of optionKeys) {
       const count = selectionCounts[key] || 0;
-      updatedPeerStats[key] = Math.min(100, Math.max(0, Math.round(count / totalAttempts * 100)));
+      updatedPeerStats[key] = totalAttempts > 0 ? Math.min(100, Math.max(0, Math.round(count / totalAttempts * 100))) : 0;
     }
     const updatedCases = {
       ...casesData,
@@ -171425,14 +171564,23 @@ var QuestionBankService = class {
       selectionCounts,
       totalAttempts
     };
-    await this.prisma.bankQuestion.update({
-      where: { id: questionId },
-      data: {
-        cases: updatedCases
+    if (bankQuestion) {
+      await this.prisma.bankQuestion.update({
+        where: { id: questionId },
+        data: {
+          cases: updatedCases
+        }
+      });
+      if (bankQuestion.questionBank?.specialty) {
+        this.clearCache(bankQuestion.questionBank.specialty);
       }
-    });
-    if (question.questionBank?.specialty) {
-      this.clearCache(question.questionBank.specialty);
+    } else if (mockQuestion) {
+      await this.prisma.mockQuestion.update({
+        where: { id: questionId },
+        data: {
+          cases: updatedCases
+        }
+      });
     }
     return {
       questionId,
@@ -171440,6 +171588,69 @@ var QuestionBankService = class {
       totalAttempts,
       selectionCounts,
       userSelections: selectedOptions
+    };
+  }
+  /**
+   * Get option distribution statistics for any question (Admin & Analytics)
+   * Returns pure real candidate responses (0% if no attempts yet).
+   */
+  async getQuestionDistributionStats(questionId) {
+    let bankQuestion = await this.prisma.bankQuestion.findUnique({
+      where: { id: questionId },
+      include: {
+        questionBank: {
+          select: { id: true, title: true, specialty: true }
+        }
+      }
+    });
+    let mockQuestion = null;
+    if (!bankQuestion) {
+      mockQuestion = await this.prisma.mockQuestion.findUnique({
+        where: { id: questionId },
+        include: {
+          mockExam: {
+            select: { id: true, title: true, category: true }
+          }
+        }
+      });
+    }
+    if (!bankQuestion && !mockQuestion) {
+      throw new Error(`Question ${questionId} not found`);
+    }
+    const q = bankQuestion || mockQuestion;
+    const casesData = q?.cases || {};
+    const rawOptions = Array.isArray(q?.options) ? q?.options : [];
+    let correctLetter = "A";
+    if (bankQuestion) {
+      correctLetter = String.fromCharCode(65 + (bankQuestion.correctAnswer || 0));
+    } else if (mockQuestion) {
+      correctLetter = mockQuestion.correctOption ? mockQuestion.correctOption.toUpperCase() : String.fromCharCode(65 + (mockQuestion.correctAnswer || 0));
+    }
+    const peerStats = casesData.peerStats || {};
+    const selectionCounts = casesData.selectionCounts || {};
+    const totalAttempts = casesData.totalAttempts || 0;
+    const options = rawOptions.map((optText, idx) => {
+      const letter = String.fromCharCode(65 + idx);
+      const isCorrect = letter === correctLetter;
+      const count = selectionCounts[letter] || 0;
+      const percentage = totalAttempts > 0 ? Math.round(count / totalAttempts * 100) : 0;
+      const cleanLabel = optText.replace(/^[A-Z][.):\s]+/, "").trim();
+      return {
+        letter,
+        label: cleanLabel || optText,
+        percentage,
+        count,
+        isCorrect
+      };
+    });
+    return {
+      questionId,
+      questionText: q?.questionText || "",
+      correctLetter,
+      totalAttempts,
+      selectionCounts,
+      peerStats,
+      options
     };
   }
 };
@@ -171663,6 +171874,22 @@ var QuestionBankController = class {
       });
     }
   };
+  getQuestionDistribution = async (req, res) => {
+    try {
+      const { questionId } = req.params;
+      const data = await this.service.getQuestionDistributionStats(questionId);
+      res.status(200).json({
+        success: true,
+        data
+      });
+    } catch (error48) {
+      AppLogger.error("Failed to get question distribution:", { error: error48 });
+      res.status(400).json({
+        success: false,
+        message: error48.message || "Failed to get question distribution"
+      });
+    }
+  };
 };
 
 // src/Modules/QuestionBank/questionBankRoutes.ts
@@ -171676,6 +171903,7 @@ function createQuestionBankRoutes(controller) {
   router.post("/:id/start", authenticate, controller.startBankAttempt);
   router.post("/attempt/:attemptId/submit", authenticate, controller.submitBankAttempt);
   router.post("/questions/:questionId/answer", optionalAuthenticate, controller.recordQuestionAnswer);
+  router.get("/questions/:questionId/distribution", optionalAuthenticate, controller.getQuestionDistribution);
   router.post("/", controller.createQuestionBank);
   router.put("/:id", controller.updateQuestionBank);
   router.delete("/:id", controller.deleteQuestionBank);
@@ -171872,7 +172100,8 @@ var OverviewService = class {
     });
     const bankAttempts = await this.prisma.bankAttempt.findMany({
       where: filter,
-      orderBy: { createdAt: "desc" }
+      orderBy: { createdAt: "desc" },
+      include: { questionBank: true }
     });
     let totalQuestionsAttempted = 0;
     let totalCorrectAnswers = 0;
@@ -171891,19 +172120,30 @@ var OverviewService = class {
     const avgTimePerQuestion = totalQuestionsAttempted > 0 ? Math.round(totalTimeTakenSeconds / totalQuestionsAttempted) : 0;
     const categoryScores = {};
     for (const attempt of mockAttempts) {
-      const cat = attempt.mockExam?.category || "General";
+      const cat = attempt.mockExam?.category || "MSRA Mock";
       if (!categoryScores[cat]) {
-        categoryScores[cat] = { total: 0, correct: 0 };
+        categoryScores[cat] = { total: 0, correct: 0, category: "Mock Exams" };
       }
       categoryScores[cat].total += attempt.totalQuestions || 0;
       categoryScores[cat].correct += attempt.correctAnswers || 0;
     }
-    const weakestAreas = Object.entries(categoryScores).map(([category, scores]) => ({
-      category,
+    for (const attempt of bankAttempts) {
+      const topicName = attempt.questionBank?.specialty || attempt.questionBank?.title || "Clinical Practice";
+      if (!categoryScores[topicName]) {
+        categoryScores[topicName] = { total: 0, correct: 0, category: attempt.questionBank?.type || "Clinical" };
+      }
+      categoryScores[topicName].total += attempt.totalQuestions || 0;
+      categoryScores[topicName].correct += attempt.correctAnswers || 0;
+    }
+    const weakestAreas = Object.entries(categoryScores).map(([topic, scores]) => ({
+      topic,
+      category: scores.category,
       accuracyPct: scores.total > 0 ? Math.round(scores.correct / scores.total * 100) : 0,
-      questionsToRevisit: scores.total - scores.correct
-    })).filter((a) => a.accuracyPct < 60 && a.questionsToRevisit > 0).sort((a, b) => a.accuracyPct - b.accuracyPct).slice(0, 4);
-    const weakestAreaNames = weakestAreas.length > 0 ? weakestAreas.map((a) => a.category).join(", ") : "None yet";
+      questionsToRevisit: Math.max(0, scores.total - scores.correct),
+      attempted: scores.total,
+      correct: scores.correct
+    })).filter((a) => a.attempted > 0).sort((a, b) => a.accuracyPct - b.accuracyPct).slice(0, 3);
+    const weakestAreaNames = weakestAreas.length > 0 ? weakestAreas.map((a) => a.topic).join(", ") : "None yet";
     const totalToRevisit = weakestAreas.reduce((acc, a) => acc + a.questionsToRevisit, 0);
     const completedPct = totalQuestionsAttempted > 0 ? Math.min(100, Math.round(totalQuestionsAttempted / 1200 * 100)) : 0;
     return {
@@ -171934,6 +172174,103 @@ var OverviewService = class {
         type: "text"
       },
       weakestTopicsList: weakestAreas
+    };
+  }
+  /**
+   * Topic-level performance analysis identifying up to three (3) weakest areas/topics for a candidate
+   */
+  async getCandidateTopicWeakness(userId) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        targetExam: true
+      }
+    });
+    const mockAttempts = await this.prisma.mockExamAttempt.findMany({
+      where: { userId },
+      include: {
+        mockExam: {
+          select: { id: true, title: true, category: true }
+        }
+      },
+      orderBy: { createdAt: "desc" }
+    });
+    const bankAttempts = await this.prisma.bankAttempt.findMany({
+      where: { userId },
+      include: {
+        questionBank: {
+          select: { id: true, title: true, specialty: true, type: true }
+        }
+      },
+      orderBy: { createdAt: "desc" }
+    });
+    const topicMap = {};
+    let totalAttempted = 0;
+    let totalCorrect = 0;
+    for (const attempt of bankAttempts) {
+      const topicName = attempt.questionBank?.specialty || attempt.questionBank?.title || "Clinical Practice";
+      const category = attempt.questionBank?.type || "Clinical Problem Solving";
+      const att = attempt.totalQuestions || 0;
+      const corr = attempt.correctAnswers || 0;
+      totalAttempted += att;
+      totalCorrect += corr;
+      if (!topicMap[topicName]) {
+        topicMap[topicName] = {
+          topic: topicName,
+          category,
+          attempted: 0,
+          correct: 0,
+          questionsToRevisit: 0,
+          accuracyPct: 0
+        };
+      }
+      topicMap[topicName].attempted += att;
+      topicMap[topicName].correct += corr;
+    }
+    for (const attempt of mockAttempts) {
+      const topicName = attempt.mockExam?.category || "MSRA Mock Exam";
+      const category = "Mock Examination";
+      const att = attempt.totalQuestions || 0;
+      const corr = attempt.correctAnswers || 0;
+      totalAttempted += att;
+      totalCorrect += corr;
+      if (!topicMap[topicName]) {
+        topicMap[topicName] = {
+          topic: topicName,
+          category,
+          attempted: 0,
+          correct: 0,
+          questionsToRevisit: 0,
+          accuracyPct: 0
+        };
+      }
+      topicMap[topicName].attempted += att;
+      topicMap[topicName].correct += corr;
+    }
+    const allTopics = Object.values(topicMap).map((t) => {
+      const accuracyPct = t.attempted > 0 ? Math.round(t.correct / t.attempted * 100) : 0;
+      return {
+        ...t,
+        accuracyPct,
+        questionsToRevisit: Math.max(0, t.attempted - t.correct)
+      };
+    });
+    allTopics.sort((a, b) => a.accuracyPct - b.accuracyPct);
+    const topWeakAreas = allTopics.slice(0, 3);
+    const overallAccuracy = totalAttempted > 0 ? Math.round(totalCorrect / totalAttempted * 100) : 0;
+    return {
+      candidate: user,
+      candidateId: userId,
+      overallAccuracy,
+      totalAttempted,
+      totalCorrect,
+      topWeakAreas,
+      // Strictly up to three (3) weakest areas/topics
+      allTopics
     };
   }
   /**
@@ -172370,6 +172707,30 @@ var OverviewController = class {
       res.status(400).json({ success: false, message: error48.message });
     }
   };
+  /**
+   * GET /api/v1/overview/candidate-weakness/:userId?
+   * Returns candidate topic-level performance and up to 3 weakest topics
+   */
+  getCandidateWeakness = async (req, res) => {
+    try {
+      const targetUserId = req.params.userId || this.getUserId(req);
+      if (!targetUserId) {
+        res.status(400).json({ success: false, message: "Candidate ID is required" });
+        return;
+      }
+      const data = await this.service.getCandidateTopicWeakness(targetUserId);
+      res.status(200).json({
+        success: true,
+        data
+      });
+    } catch (error48) {
+      AppLogger.error("Failed to fetch candidate weakness analysis:", { error: error48 });
+      res.status(500).json({
+        success: false,
+        message: error48.message || "Failed to fetch candidate weakness analysis"
+      });
+    }
+  };
 };
 
 // src/Modules/Overview/overviewRoutes.ts
@@ -172378,6 +172739,8 @@ function createOverviewRoutes(controller) {
   const router = (0, import_express7.Router)();
   router.get("/content", controller.getDashboardContent);
   router.get("/stats", optionalAuthenticate, controller.getUserStats);
+  router.get("/candidate-weakness", optionalAuthenticate, controller.getCandidateWeakness);
+  router.get("/candidate-weakness/:userId", controller.getCandidateWeakness);
   router.put("/content/:section", controller.upsertSection);
   router.delete("/content/:section", controller.deleteSection);
   router.get("/reports", controller.getReports);

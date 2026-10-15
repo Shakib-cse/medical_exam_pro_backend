@@ -230,5 +230,22 @@ export class QuestionBankController {
       });
     }
   };
+
+  public getQuestionDistribution = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { questionId } = req.params;
+      const data = await this.service.getQuestionDistributionStats(questionId as string);
+      res.status(200).json({
+        success: true,
+        data,
+      });
+    } catch (error: any) {
+      AppLogger.error("Failed to get question distribution:", { error });
+      res.status(400).json({
+        success: false,
+        message: error.message || "Failed to get question distribution",
+      });
+    }
+  };
 }
 

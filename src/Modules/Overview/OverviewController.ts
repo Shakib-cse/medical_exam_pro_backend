@@ -231,4 +231,29 @@ export class OverviewController {
       res.status(400).json({ success: false, message: error.message });
     }
   };
+
+  /**
+   * GET /api/v1/overview/candidate-weakness/:userId?
+   * Returns candidate topic-level performance and up to 3 weakest topics
+   */
+  public getCandidateWeakness = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const targetUserId = (req.params.userId as string) || this.getUserId(req);
+      if (!targetUserId) {
+        res.status(400).json({ success: false, message: "Candidate ID is required" });
+        return;
+      }
+      const data = await this.service.getCandidateTopicWeakness(targetUserId);
+      res.status(200).json({
+        success: true,
+        data,
+      });
+    } catch (error: any) {
+      AppLogger.error("Failed to fetch candidate weakness analysis:", { error });
+      res.status(500).json({
+        success: false,
+        message: error.message || "Failed to fetch candidate weakness analysis",
+      });
+    }
+  };
 }

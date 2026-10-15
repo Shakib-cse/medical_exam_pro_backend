@@ -14,6 +14,7 @@ export function createQuestionBankRoutes(controller: QuestionBankController): Ro
   router.post("/:id/start", authenticate, controller.startBankAttempt);
   router.post("/attempt/:attemptId/submit", authenticate, controller.submitBankAttempt);
   router.post("/questions/:questionId/answer", optionalAuthenticate, controller.recordQuestionAnswer);
+  router.get("/questions/:questionId/distribution", optionalAuthenticate, controller.getQuestionDistribution);
 
   // Admin routes
   router.post("/", controller.createQuestionBank);

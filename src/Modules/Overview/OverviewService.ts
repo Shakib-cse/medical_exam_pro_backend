@@ -189,6 +189,7 @@ export class OverviewService {
     const bankAttempts = await this.prisma.bankAttempt.findMany({
       where: filter,
       orderBy: { createdAt: "desc" },
+      include: { questionBank: true },
     });
 
     // Compute aggregate stats
@@ -216,29 +217,42 @@ export class OverviewService {
       ? Math.round(totalTimeTakenSeconds / totalQuestionsAttempted)
       : 0;
 
-    // Compute weakest areas from mock exams (lowest scoring categories)
-    const categoryScores: Record<string, { total: number; correct: number }> = {};
+    // Compute weakest areas across mock exams and question bank attempts by topic
+    const categoryScores: Record<string, { total: number; correct: number; category: string }> = {};
     for (const attempt of mockAttempts) {
-      const cat = attempt.mockExam?.category || "General";
+      const cat = attempt.mockExam?.category || "MSRA Mock";
       if (!categoryScores[cat]) {
-        categoryScores[cat] = { total: 0, correct: 0 };
+        categoryScores[cat] = { total: 0, correct: 0, category: "Mock Exams" };
       }
       categoryScores[cat].total += attempt.totalQuestions || 0;
       categoryScores[cat].correct += attempt.correctAnswers || 0;
     }
 
+    for (const attempt of bankAttempts) {
+      const topicName = attempt.questionBank?.specialty || attempt.questionBank?.title || "Clinical Practice";
+      if (!categoryScores[topicName]) {
+        categoryScores[topicName] = { total: 0, correct: 0, category: attempt.questionBank?.type || "Clinical" };
+      }
+      categoryScores[topicName].total += attempt.totalQuestions || 0;
+      categoryScores[topicName].correct += attempt.correctAnswers || 0;
+    }
+
+    // Up to three (3) weakest areas/topics sorted ascending by accuracy
     const weakestAreas = Object.entries(categoryScores)
-      .map(([category, scores]) => ({
-        category,
+      .map(([topic, scores]) => ({
+        topic,
+        category: scores.category,
         accuracyPct: scores.total > 0 ? Math.round((scores.correct / scores.total) * 100) : 0,
-        questionsToRevisit: scores.total - scores.correct,
+        questionsToRevisit: Math.max(0, scores.total - scores.correct),
+        attempted: scores.total,
+        correct: scores.correct,
       }))
-      .filter((a) => a.accuracyPct < 60 && a.questionsToRevisit > 0)
+      .filter((a) => a.attempted > 0)
       .sort((a, b) => a.accuracyPct - b.accuracyPct)
-      .slice(0, 4);
+      .slice(0, 3); // Strictly up to three (3) weakest areas
 
     const weakestAreaNames = weakestAreas.length > 0
-      ? weakestAreas.map((a) => a.category).join(", ")
+      ? weakestAreas.map((a) => a.topic).join(", ")
       : "None yet";
       
     const totalToRevisit = weakestAreas.reduce((acc, a) => acc + a.questionsToRevisit, 0);
@@ -274,6 +288,131 @@ export class OverviewService {
         type: "text" as const,
       },
       weakestTopicsList: weakestAreas,
+    };
+  }
+
+  /**
+   * Topic-level performance analysis identifying up to three (3) weakest areas/topics for a candidate
+   */
+  async getCandidateTopicWeakness(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        targetExam: true,
+      },
+    });
+
+    const mockAttempts = await this.prisma.mockExamAttempt.findMany({
+      where: { userId },
+      include: {
+        mockExam: {
+          select: { id: true, title: true, category: true },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const bankAttempts = await this.prisma.bankAttempt.findMany({
+      where: { userId },
+      include: {
+        questionBank: {
+          select: { id: true, title: true, specialty: true, type: true },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const topicMap: Record<
+      string,
+      {
+        topic: string;
+        category: string;
+        attempted: number;
+        correct: number;
+        questionsToRevisit: number;
+        accuracyPct: number;
+      }
+    > = {};
+
+    let totalAttempted = 0;
+    let totalCorrect = 0;
+
+    for (const attempt of bankAttempts) {
+      const topicName = attempt.questionBank?.specialty || attempt.questionBank?.title || "Clinical Practice";
+      const category = attempt.questionBank?.type || "Clinical Problem Solving";
+      const att = attempt.totalQuestions || 0;
+      const corr = attempt.correctAnswers || 0;
+
+      totalAttempted += att;
+      totalCorrect += corr;
+
+      if (!topicMap[topicName]) {
+        topicMap[topicName] = {
+          topic: topicName,
+          category,
+          attempted: 0,
+          correct: 0,
+          questionsToRevisit: 0,
+          accuracyPct: 0,
+        };
+      }
+      topicMap[topicName].attempted += att;
+      topicMap[topicName].correct += corr;
+    }
+
+    for (const attempt of mockAttempts) {
+      const topicName = attempt.mockExam?.category || "MSRA Mock Exam";
+      const category = "Mock Examination";
+      const att = attempt.totalQuestions || 0;
+      const corr = attempt.correctAnswers || 0;
+
+      totalAttempted += att;
+      totalCorrect += corr;
+
+      if (!topicMap[topicName]) {
+        topicMap[topicName] = {
+          topic: topicName,
+          category,
+          attempted: 0,
+          correct: 0,
+          questionsToRevisit: 0,
+          accuracyPct: 0,
+        };
+      }
+      topicMap[topicName].attempted += att;
+      topicMap[topicName].correct += corr;
+    }
+
+    // Compute accuracy percentages
+    const allTopics = Object.values(topicMap).map((t) => {
+      const accuracyPct = t.attempted > 0 ? Math.round((t.correct / t.attempted) * 100) : 0;
+      return {
+        ...t,
+        accuracyPct,
+        questionsToRevisit: Math.max(0, t.attempted - t.correct),
+      };
+    });
+
+    // Sort ascending by accuracy: weakest topics first
+    allTopics.sort((a, b) => a.accuracyPct - b.accuracyPct);
+
+    // Identify UP TO THREE (3) weakest areas/topics
+    const topWeakAreas = allTopics.slice(0, 3);
+
+    const overallAccuracy = totalAttempted > 0 ? Math.round((totalCorrect / totalAttempted) * 100) : 0;
+
+    return {
+      candidate: user,
+      candidateId: userId,
+      overallAccuracy,
+      totalAttempted,
+      totalCorrect,
+      topWeakAreas, // Strictly up to three (3) weakest areas/topics
+      allTopics,
     };
   }
 

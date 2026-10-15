@@ -8,6 +8,8 @@ export function createOverviewRoutes(controller: OverviewController): Router {
   // Public/User routes
   router.get("/content", controller.getDashboardContent);
   router.get("/stats", optionalAuthenticate, controller.getUserStats);
+  router.get("/candidate-weakness", optionalAuthenticate, controller.getCandidateWeakness);
+  router.get("/candidate-weakness/:userId", controller.getCandidateWeakness);
 
   // Admin routes
   router.put("/content/:section", controller.upsertSection);

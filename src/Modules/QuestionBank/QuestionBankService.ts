@@ -15,12 +15,12 @@ export class QuestionBankService {
   private readonly CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
 
   constructor(private prisma: PrismaClient) {
-    // Warm up caches in background so all user clicks and navigation are instantaneous
+    // Warm up caches in background after server startup
     setTimeout(() => {
       this.warmupCaches().catch((err) => {
         console.warn("Background warmup error:", err?.message || err);
       });
-    }, 100);
+    }, 1000);
   }
 
   /**
@@ -44,16 +44,51 @@ export class QuestionBankService {
           questionCount: true,
           createdAt: true,
           updatedAt: true,
-          questions: {
-            select: {
-              id: true,
-              subTopic: true,
-              questionType: true,
-            },
-            orderBy: { order: "asc" },
-          },
         },
       });
+
+      // Fast aggregated question counts directly from database without loading full objects into RAM
+      const countAggs: any[] = await this.prisma.$queryRaw`
+        SELECT questionBankId, 
+               COUNT(*) as totalQ,
+               SUM(CASE WHEN questionType = 'SBA' THEN 1 ELSE 0 END) as sbaCount,
+               SUM(CASE WHEN questionType = 'EMQ' THEN 1 ELSE 0 END) as emqThemesCount,
+               SUM(CASE WHEN questionType = 'EMQ' THEN COALESCE(JSON_LENGTH(cases), 1) ELSE 0 END) as emqCasesCount,
+               SUM(CASE WHEN questionType = 'RANKING' THEN 1 ELSE 0 END) as rankingCount,
+               SUM(CASE WHEN questionType = 'SELECT_3' THEN 1 ELSE 0 END) as select3Count
+        FROM BankQuestion
+        WHERE questionBankId IS NOT NULL
+        GROUP BY questionBankId
+      `;
+
+      const countsMap = new Map<string, any>();
+      for (const row of countAggs) {
+        countsMap.set(row.questionBankId, {
+          sbaCount: Number(row.sbaCount || 0),
+          emqThemesCount: Number(row.emqThemesCount || 0),
+          emqCasesCount: Number(row.emqCasesCount || 0),
+          rankingCount: Number(row.rankingCount || 0),
+          select3Count: Number(row.select3Count || 0),
+        });
+      }
+
+      // Fast subtopic extraction
+      const subtopicsRows: any[] = await this.prisma.$queryRaw`
+        SELECT DISTINCT questionBankId, subTopic
+        FROM BankQuestion
+        WHERE questionBankId IS NOT NULL AND subTopic IS NOT NULL AND subTopic != ''
+      `;
+
+      const subtopicsMap = new Map<string, string[]>();
+      for (const st of subtopicsRows) {
+        if (!subtopicsMap.has(st.questionBankId)) {
+          subtopicsMap.set(st.questionBankId, []);
+        }
+        subtopicsMap.get(st.questionBankId)!.push(st.subTopic.trim());
+      }
+      for (const [k, list] of subtopicsMap.entries()) {
+        subtopicsMap.set(k, Array.from(new Set(list)).sort());
+      }
 
       const now = Date.now();
       const slugMap: Record<string, string> = {
@@ -84,36 +119,22 @@ export class QuestionBankService {
       };
 
       const baseList = banks.map((bank) => {
-        const counts = this.computeQuestionCounts(bank.questions, bank.questionCount || 0);
-        const subTopics = Array.from(
-          new Set(
-            (bank.questions || [])
-              .map((q) => q.subTopic)
-              .filter((st): st is string => Boolean(st && st.trim()))
-          )
-        ).sort();
+        const counts = countsMap.get(bank.id) || {
+          sbaCount: 0,
+          emqThemesCount: 0,
+          emqCasesCount: 0,
+          rankingCount: 0,
+          select3Count: 0,
+        };
 
-        const subTopicCounts: Record<string, { total: number; ranking: number; select3: number; sba: number; emq: number }> = {};
-        for (const q of bank.questions || []) {
-          if (!q.subTopic) continue;
-          const st = q.subTopic.trim();
-          if (!subTopicCounts[st]) {
-            subTopicCounts[st] = { total: 0, ranking: 0, select3: 0, sba: 0, emq: 0 };
-          }
-          if (q.questionType === "RANKING") {
-            subTopicCounts[st].ranking++;
-            subTopicCounts[st].total++;
-          } else if (q.questionType === "SELECT_3") {
-            subTopicCounts[st].select3++;
-            subTopicCounts[st].total++;
-          } else if (q.questionType === "EMQ") {
-            subTopicCounts[st].emq++;
-            subTopicCounts[st].total++;
-          } else {
-            subTopicCounts[st].sba++;
-            subTopicCounts[st].total++;
-          }
-        }
+        const isSJT = counts.rankingCount + counts.select3Count > 0;
+        const total = isSJT
+          ? counts.rankingCount + counts.select3Count
+          : (counts.sbaCount + counts.emqCasesCount > 0
+              ? counts.sbaCount + counts.emqCasesCount
+              : bank.questionCount || 0);
+
+        const subTopics = subtopicsMap.get(bank.id) || [];
 
         const summaryResult = {
           id: bank.id,
@@ -125,15 +146,15 @@ export class QuestionBankService {
           difficultyBadge: bank.difficultyBadge,
           difficultyType: bank.difficultyType,
           durationMinutes: bank.durationMinutes,
-          questionCount: counts.questionCount,
-          totalQuestions: counts.questionCount,
+          questionCount: total,
+          totalQuestions: total,
           sbaCount: counts.sbaCount,
-          emqCount: counts.emqCount,
+          emqCount: counts.emqCasesCount,
           emqThemesCount: counts.emqThemesCount,
           rankingCount: counts.rankingCount,
           select3Count: counts.select3Count,
           subTopics,
-          subTopicCounts,
+          subTopicCounts: {},
           stats: {
             attempted: 0,
             correct: 0,
@@ -171,10 +192,10 @@ export class QuestionBankService {
           difficultyBadge: bank.difficultyBadge,
           difficultyType: bank.difficultyType,
           durationMinutes: bank.durationMinutes,
-          questionCount: counts.questionCount,
-          totalQuestions: counts.questionCount,
+          questionCount: total,
+          totalQuestions: total,
           sbaCount: counts.sbaCount,
-          emqCount: counts.emqCount,
+          emqCount: counts.emqCasesCount,
           emqThemesCount: counts.emqThemesCount,
           rankingCount: counts.rankingCount,
           select3Count: counts.select3Count,
@@ -251,9 +272,16 @@ export class QuestionBankService {
     for (const q of questions) {
       if (q.questionType === "EMQ") {
         emqThemesCount++;
+        let casesLen = 0;
         if (Array.isArray(q.cases)) {
-          emqCasesCount += q.cases.length;
+          casesLen = q.cases.length;
+        } else if (typeof q.cases === "string") {
+          try {
+            const parsed = JSON.parse(q.cases);
+            if (Array.isArray(parsed)) casesLen = parsed.length;
+          } catch {}
         }
+        emqCasesCount += casesLen > 0 ? casesLen : 1;
       } else if (q.questionType === "RANKING") {
         rankingCount++;
       } else if (q.questionType === "SELECT_3") {
@@ -1130,16 +1158,18 @@ export class QuestionBankService {
 
   /**
    * Record a candidate's answer for a question and dynamically recalculate peer selection percentages.
+   * Supports both BankQuestion and MockQuestion records using pure real submission data.
    */
   async recordQuestionAnswer(
     questionId: string,
     payload: {
-      selectedOptions?: string[]; // e.g. ["A", "C", "F"]
-      rankOrder?: string[];       // e.g. ["B", "D", "A", "C", "E"]
+      selectedOptions?: string[]; // e.g. ["A"] or ["C"]
+      rankOrder?: string[];
       userId?: string;
     }
   ) {
-    const question = await this.prisma.bankQuestion.findUnique({
+    // 1. Try finding in bankQuestion first
+    let bankQuestion = await this.prisma.bankQuestion.findUnique({
       where: { id: questionId },
       include: {
         questionBank: {
@@ -1148,15 +1178,28 @@ export class QuestionBankService {
       },
     });
 
-    if (!question) {
+    let mockQuestion = null;
+    if (!bankQuestion) {
+      mockQuestion = await this.prisma.mockQuestion.findUnique({
+        where: { id: questionId },
+        include: {
+          mockExam: {
+            select: { id: true, title: true, category: true },
+          },
+        },
+      });
+    }
+
+    if (!bankQuestion && !mockQuestion) {
       throw new Error(`Question ${questionId} not found`);
     }
 
-    const casesData = ((question.cases as any) || {}) as Record<string, any>;
+    const question = bankQuestion || mockQuestion;
+    const casesData = ((question?.cases as any) || {}) as Record<string, any>;
     const selectedOptions = (payload.selectedOptions || []).map((o) => String(o).toUpperCase().trim());
 
     // Extract valid option letter keys from question.options
-    const rawOptions = (Array.isArray(question.options) ? question.options : []) as string[];
+    const rawOptions = (Array.isArray(question?.options) ? question?.options : []) as string[];
     const parsedLetters = rawOptions
       .map((opt) => {
         const match = String(opt).match(/^([A-Za-z])/);
@@ -1167,7 +1210,7 @@ export class QuestionBankService {
     const optionKeys =
       parsedLetters.length > 0
         ? parsedLetters
-        : ["A", "B", "C", "D", "E", "F", "G", "H"].slice(0, rawOptions.length || 8);
+        : ["A", "B", "C", "D", "E", "F", "G", "H"].slice(0, rawOptions.length || 4);
 
     // Real dynamic calculation: start from actual recorded user submissions
     let totalAttempts = typeof casesData.totalAttempts === "number" ? casesData.totalAttempts : 0;
@@ -1183,11 +1226,11 @@ export class QuestionBankService {
       }
     }
 
-    // Recalculate dynamic peer percentages (0 - 100%)
+    // Recalculate dynamic peer percentages (0 - 100%) from real attempts only
     const updatedPeerStats: Record<string, number> = {};
     for (const key of optionKeys) {
       const count = selectionCounts[key] || 0;
-      updatedPeerStats[key] = Math.min(100, Math.max(0, Math.round((count / totalAttempts) * 100)));
+      updatedPeerStats[key] = totalAttempts > 0 ? Math.min(100, Math.max(0, Math.round((count / totalAttempts) * 100))) : 0;
     }
 
     const updatedCases = {
@@ -1197,17 +1240,25 @@ export class QuestionBankService {
       totalAttempts,
     };
 
-    // Persist to MariaDB
-    await this.prisma.bankQuestion.update({
-      where: { id: questionId },
-      data: {
-        cases: updatedCases,
-      },
-    });
+    // Persist to MariaDB based on model
+    if (bankQuestion) {
+      await this.prisma.bankQuestion.update({
+        where: { id: questionId },
+        data: {
+          cases: updatedCases,
+        },
+      });
 
-    // Invalidate specialty cache so subsequent fetches get fresh peer stats
-    if (question.questionBank?.specialty) {
-      this.clearCache(question.questionBank.specialty);
+      if (bankQuestion.questionBank?.specialty) {
+        this.clearCache(bankQuestion.questionBank.specialty);
+      }
+    } else if (mockQuestion) {
+      await this.prisma.mockQuestion.update({
+        where: { id: questionId },
+        data: {
+          cases: updatedCases,
+        },
+      });
     }
 
     return {
@@ -1216,6 +1267,80 @@ export class QuestionBankService {
       totalAttempts,
       selectionCounts,
       userSelections: selectedOptions,
+    };
+  }
+
+  /**
+   * Get option distribution statistics for any question (Admin & Analytics)
+   * Returns pure real candidate responses (0% if no attempts yet).
+   */
+  async getQuestionDistributionStats(questionId: string) {
+    let bankQuestion = await this.prisma.bankQuestion.findUnique({
+      where: { id: questionId },
+      include: {
+        questionBank: {
+          select: { id: true, title: true, specialty: true },
+        },
+      },
+    });
+
+    let mockQuestion = null;
+    if (!bankQuestion) {
+      mockQuestion = await this.prisma.mockQuestion.findUnique({
+        where: { id: questionId },
+        include: {
+          mockExam: {
+            select: { id: true, title: true, category: true },
+          },
+        },
+      });
+    }
+
+    if (!bankQuestion && !mockQuestion) {
+      throw new Error(`Question ${questionId} not found`);
+    }
+
+    const q = bankQuestion || mockQuestion;
+    const casesData = ((q?.cases as any) || {}) as Record<string, any>;
+    const rawOptions = (Array.isArray(q?.options) ? q?.options : []) as string[];
+
+    let correctLetter = "A";
+    if (bankQuestion) {
+      correctLetter = String.fromCharCode(65 + (bankQuestion.correctAnswer || 0));
+    } else if (mockQuestion) {
+      correctLetter = mockQuestion.correctOption
+        ? mockQuestion.correctOption.toUpperCase()
+        : String.fromCharCode(65 + (mockQuestion.correctAnswer || 0));
+    }
+
+    const peerStats = casesData.peerStats || {};
+    const selectionCounts = casesData.selectionCounts || {};
+    const totalAttempts = casesData.totalAttempts || 0;
+
+    const options = rawOptions.map((optText, idx) => {
+      const letter = String.fromCharCode(65 + idx);
+      const isCorrect = letter === correctLetter;
+      const count = selectionCounts[letter] || 0;
+      const percentage = totalAttempts > 0 ? Math.round((count / totalAttempts) * 100) : 0;
+      const cleanLabel = optText.replace(/^[A-Z][.):\s]+/, "").trim();
+
+      return {
+        letter,
+        label: cleanLabel || optText,
+        percentage,
+        count,
+        isCorrect,
+      };
+    });
+
+    return {
+      questionId,
+      questionText: q?.questionText || "",
+      correctLetter,
+      totalAttempts,
+      selectionCounts,
+      peerStats,
+      options,
     };
   }
 }
